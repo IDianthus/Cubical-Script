@@ -1,0 +1,6 @@
+{
+	"workbench.statusBar.visible": true,
+	"workbench.tips.enabled": true,
+	"workbench.tree.enableStickyScroll": true,
+	"workbench.editor.enablePreview": true
+}
