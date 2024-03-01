@@ -10,11 +10,6 @@ int clear;
 char word[3];
 
 int main() {
-	for( int i = 65; char(i) != 'Z'; i ++ )
-	{
-		cout << i << endl;
-	}
-	return 0;
 	while (in >> word[2]) {
 		if (word[2] == '{' || word[2] == '(') {
 			clear ++;
