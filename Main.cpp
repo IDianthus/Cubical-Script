@@ -8,74 +8,147 @@ ofstream out("Test.out");
 
 
 
-void indenting(int clear) {
-	out << endl;
-	for (int i = clear; i > 0; i--) {
+void newline_indent(int tab_ammount) {
+	out << '\n';
+	for (int i = tab_ammount; i > 0; i--) {
 		out << '\t';
 	}
 }
 
 bool comment;
-int indentation;
+bool string_input;
+
+int space;
+int indenting;
+
 char input [3];
 
 int main() {
+
 	while (in.get(input [2])) {
-		if (input [2] == '{' || input [2] == '(') {
+		bool hidden_character = false;
+
+		// comment case
+		if (input [1] != '}' && input [2] == ';' && string_input == false) {
+			comment = true;
+		}
+
+		if (input [2] == '{') {
 			if (comment == false) {
-				indentation++;
+				indenting++;
 			}
+
 		}
 		if (input [2] == '}' || input [2] == ')') {
 			if (comment == false) {
-				indentation--;
+				indenting--;
 			}
 		}
-		if (int(input [0]) > 47 && int(input [0]) < 58 && input [1] == '.' && (int(input [2]) < 48) || int(input [2] > 57) ) {
+
+		// consistent indenting
+		if (input [2] == ' ') {
+			if (comment == false && string_input == false) {
+				space++;
+				hidden_character = true;
+			}
+		}
+
+		if (space == 3) {
+			out << '\t';
+			space = 0;
+		}
+
+
+		// make sure all doubles end in .0
+		if (int(input [0]) > 47 && int(input [0]) < 58 && input [1] == '.' && ((int(input [2]) < 48) || int(input [2] > 57))) {
 			out << 0;
 		}
-		if (input [1] == ':' && input [2] == '{' || input [1] == '}' && input [2] == ';') {
-			out << input [2];
-			indenting(indentation);
-		}
-		else if (input [1] == '{' && input [2] == '"') {
-			indenting(indentation);
-			out << input [2];
-		}
-		else if (input [1] == '\\') {
-			if (input [2] == 'c') {
-				comment = true;
+
+		if (input [2] == '"' && comment == false) {
+
+			string_input = (string_input == false);
+
+			if (input [1] == '{') {
+				newline_indent(indenting);
 			}
+		}
+
+		// spacial cases
+		if (input [1] == '\\') {
+
+			// end of a block case \}
 			if (input [2] == '}') {
-				indenting(indentation);
-				out << input [2];
+				newline_indent(indenting);
 			}
-			else if (input [2] == 'n') {
-				if(input [0] =! '\\') {
-					
+
+			// new line \n
+			if (input [2] == 'n') {
+
+				// on \\n it must keep comment state
+				if (input [0] != '\\') {
+					// otherwise it exits comments
+					comment = false;
 				}
-				indenting(indentation);
+
+				newline_indent(indenting);
+
+				// space cannot increase unless it's a comment, if it detects a space it adds a new tab
+				if (space != 0) {
+					out << '\t';
+					space = 0;
+				}
+
+				// prevents typing n on a new line
+				hidden_character = true;
 			}
-			else if (input [2] == '\\') {
+
+			// line continuation check
+			if (input [2] == '\\') {
+
+				// special indenting check
+				// we always want (\ and )\
+
 				if (input [0] != '(' && input [0] != ')') {
 					out << " ";
 				}
-				out << '\\';
-			}
-			else {
-				out << input [2];
+				hidden_character = true;
 			}
 		}
-		else if (input [2] != '\\') {
+
+		// enable's line breaks
+		if (input [2] == '\\') {
+			hidden_character = hidden_character == false;
+		}
+
+		// prevents something=something
+		// turns it into something = something
+		if (input [1] != '=' && input [2] == '=' && space == 0) {
+			out << " ";
+		}
+
+		// adding indents
+		if (input [2] != ' ') {
+			if (space == 1) {
+				out << " ";
+			}
+			space = 0;
+		}
+
+		// type out allowed characters
+		if (hidden_character == false) {
 			out << input [2];
 		}
-		if (input [2] == input [1] && input [1] == input [0] && input [0] == ' ') {
-			out << '\b' << '\b' << '\b' << '\t';
-			input [2] = input [1];
-			input [1] = input [0];
+
+		// permits spacing between blocks
+		if ((input [1] == ':' && input [2] == '{') || (input [1] == '}' && input [2] == ';')) {
+			newline_indent(indenting);
 		}
-		input [0] = input [1];
-		input [1] = input [2];
+
+		// don't let spaces through as they can cause issues
+		if (input [2] != ' ' || string_input == true || comment == true) {
+			input [0] = input [1];
+			input [1] = input [2];
+		}
 	}
 	return 0;
 }
