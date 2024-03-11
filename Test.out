@@ -1,542 +1,606 @@
-"Adventure":{
-	
-	"analyze loot":{
-		:import adventure_lib
-		:name {package}:analyze loot
-		
-		:global string leon.adventure.targetPositions
-		
-		:local string queue
-		:local string idx
-		:local vector curPos
-		:local string targetPos
-		:local string lootPositions
-		
-		#setField(index, value) lss ("_f" . {index}, {value})
-		#getField(index) lsg("_f" . {index})
-		#setTPos(index, value) lss ("_t" . {index}, {value})
-		#getTPos(index) lsg("_t" . {index})
-		
-		queue = {posToString(x(adventure.playerPos()), y(adventure.playerPos()))} . "S:"
-		
-		; On the first entry of this loop, the junk entry "_f" will be set to "S".
-		; This has no effect.
-		; In general, lootPositions, queue and setField are protected so that if the field
-		; has already been set, we won't take action again.
+{
+	"Adventure":{
 
-		loop1:
-		curPos = {firstElementPos}
-		idx = sub (queue, 0, 4)
-		lootPositions = if (\
-			{getField(idx)} == "" \
-				 && contains(adventure.entityType(curPos), "Chest"), \
-			{posToString(x(curPos), y(curPos))} . ":", \
-			"") . lootPositions
-		{setField(if ({getField(idx)} ! = "", "", idx), {firstElementDir})}
-		queue = sub (queue, 6, 99999) . if ({getField(idx)} ! = {firstElementDir}, \
-			"", \
-			if (\
-				 adventure.isWall(curPos + vec(0.0, 1.0)) || y(curPos) > = 18.0, \
-				 "", \
-				 {posToString(x(curPos), y(curPos) + 1.0)} . "U:" \
-			) . if (\
-				 adventure.isWall(curPos + vec(0.0, -1.0)) || y(curPos) < 1.0, \
-				 "", \
-				 {posToString(x(curPos), y(curPos) - 1.0)} . "D:" \
-			) . if (\
-				 adventure.isWall(curPos + vec(1.0, 0.0)) || x(curPos) > = 18.0, \
-				 "", \
-				 {posToString(x(curPos) + 1.0, y(curPos))} . "R:" \
-			) . if (\
-				 adventure.isWall(curPos + vec(-1.0, 0.0)) || x(curPos) < 1.0, \
-				 "", \
-				 {posToString(x(curPos) - 1.0, y(curPos))} . "L:" \
-			)\
-		)
-		gotoif (loop1, queue ! = "")
 		
-		continue:
-		lootPositions = leon.adventure.targetPositions . lootPositions
-		
-		loop2:
-		targetPos = sub (lootPositions, 0, 4)
-		curPos = {strToVec(targetPos)}
-		lootPositions = sub (lootPositions, 5, 99999)
-		
-		innerLoop2:
-		idx = {posToString(x(curPos), y(curPos))}
-		leon.adventure.targetPositions = if (\
-			{getField({posToString(\
-								 x(curPos) - {nextX({getField(idx)})}, \
-								 y(curPos) - {nextY({getField(idx)})} \
-							)})} == "S" \
-				 && false == contains(leon.adventure.targetPositions, targetPos), \
-			targetPos . ":" . leon.adventure.targetPositions, \
-			if (\
-					 false == contains(leon.adventure.targetPositions, targetPos) \
-						&& {getTPos(idx)} ! = "", \
-						sub (\
-							leon.adventure.targetPositions, \
-							0, \
-							index (leon.adventure.targetPositions, {getTPos(idx)}, 0)\
-							)\
-						. targetPos . ":" \
-						. sub (\
-								 leon.adventure.targetPositions, \
-								 index (leon.adventure.targetPositions, {getTPos(idx)}, 0), \
-								 99999 \
-							), \
-					 leon.adventure.targetPositions \
-				)\)
-		
-		{setTPos(\
-				idx, \
+		"analyze loot":{
+
+			:import adventure_lib
+			:name {package}:analyze loot
+			
+			:global string leon.adventure.targetPositions
+			
+			:local string queue
+			:local string idx
+			:local vector curPos
+			:local string targetPos
+			:local string lootPositions
+			
+			#setField(index, value) lss ("_f". {index}, {value})
+			#getField(index) lsg("_f". {index})
+			#setTPos(index, value) lss ("_t". {index}, {value})
+			#getTPos(index) lsg("_t". {index})
+			
+			queue = {posToString(x(adventure.playerPos()), y(adventure.playerPos()))} . "S:"
+			
+			; On the first entry of this loop, the junk entry "_f" will be set to "S".
+			; This has no effect.
+			; In general, lootPositions, queue and setField are protected so that if the field
+			; has already been set, we won't take action again.
+			loop1:
+			curPos = {firstElementPos}
+			idx = sub (queue, 0, 4)
+			lootPositions = if (\
+				{getField(idx)} == "" \
+					&& contains(adventure.entityType(curPos), "Chest"), \
+				{posToString(x(curPos), y(curPos))} . ":", \
+				"") . lootPositions
+			{setField(if ({getField(idx)} != "", "", idx), {firstElementDir})}
+			queue = sub (queue, 6, 99999) . if ({getField(idx)} != {firstElementDir}, \
+				"", \
 				if (\
-						 false == contains(leon.adventure.targetPositions, targetPos)\
-							|| {getTPos(idx)} == sub (leon.adventure.targetPositions, index (leon.adventure.targetPositions, targetPos, 0) + 5, 4), \
-						 targetPos, \
-						 {getTPos(idx)} \
-					)\)}
-		curPos - = {nextDir({getField(idx)})}
-		goto (if (\
-				{getField({posToString(x(curPos), y(curPos))})} ! = "S", \
-				innerLoop2, \
-				if (len(lootPositions) > 0, loop2, end)\))
-		
-		end:
-		wait(0.0)
-	};
-	"clear room":{
-		:import adventure_lib
-		:name {package}:clear room
-		
-		:global int leon.adventure.maxDifficulty
-		:global string leon.adventure.path
-		:global string leon.adventure.targetPositions
-		
-		:global string leon.adventure.room_direction
-		:local double difficulty
-		
-		#nextRoomLower if (\
-			x(adventure.roomCoords()) < 127.0 && y(adventure.roomCoords()) > = 127.0, \
-			"R", \
-			if (\
-					 x(adventure.roomCoords()) > = 127.0 && y(adventure.roomCoords()) > 127.0, \
-					 "D", \
-					 if (\
-							x(adventure.roomCoords()) > 127.0 && y(adventure.roomCoords()) < = 127.0, \
-							"L", \
-							"U"  \
-						 )\
-				)\)
-		#rotateLeft(x) sub ("LDRU", index ("ULDR", {x}, 0), 1)
-		#condRotateLeft(cond, x) sub (if ({cond}, "LDRU", "ULDR"), index ("ULDR", {x}, 0), 1)
-		
-		executesync ("{package}:farm keys")
-		
-		; We check based on current difficulty plus 1, because it's more efficient
-		; that way.
-		difficulty = {cur_difficulty(1.0)}
-		leon.adventure.room_direction = if (\
-			difficulty == 1.00 && leon.adventure.room_direction ! = "", \
-			{rotateLeft(leon.adventure.room_direction)}, \
-			{condRotateLeft({survivable(difficulty)}, {nextRoomLower})} \)
-		
-		leon.adventure.targetPositions = sub (\
-				 "0918 0009 1809 0900", \
-				 index ("U    L    R    D", leon.adventure.room_direction, 0), \
-				 4 \) . ":"
-		
-		executesync ("{package}:find loot")
-		leon.adventure.path = leon.adventure.room_direction
-		executesync ("{package}:follow path")
-		end:
-		wait(0.0)
-	};
-	"farm keys":{
-		:import adventure_lib
-		:name {package}:farm keys
-		
-		:global string leon.adventure.path
-		:global bool leon.adventure.running
-		:global int leon.adventure.maxDifficulty
-		
-		:local double difficulty
-		:local bool parity
-		:local bool needs_something
-		:local bool skipped
-		
-		:local string dir
-		
-		#needs_bombs adventure.bombs() < 99 && difficulty > = 80.00 && adventure.hasItem("leechSword")
-		#needs_health adventure.playerHealth() < 99 && adventure.hasItem("leechSword")
-		#needs_mana adventure.mana() < 99 && adventure.hasItem("manaReaver") && adventure.hasItem("bookSpells")
-		#needs_keys adventure.keys() < = 10
-		#needs_armor adventure.manaArmor() < adventure.playerArmor()
-		#num_enemies round(difficulty * 0.1 + 3.0)
-		#elite_dmg d2i(floor(difficulty * 0.01 + 1.0)) * (d2i(ceil(ceil(difficulty * 0.39) * 1.5)) - adventure.playerArmor())
-		
-		goto (start)
-		
-		next:
-		parity = false == parity
-		leon.adventure.path = dir
-		executesync ("{package}:follow path")
-		start:
-		difficulty = {cur_difficulty(0.0)}
-		needs_something = {survivable(difficulty)} && ({needs_bombs} || {needs_health} || {needs_mana} || {needs_keys} || {needs_armor})
-		dir = sub ("XU   D  L  R", index (" 918 90 09 189", x(adventure.playerPos()) . y(adventure.playerPos()), 0), 1)
-		skipped = contains("UDLR", dir) && (\
-			(adventure.countEntities("Elite") > 0) ! = ({needs_bombs})\
-				 && (adventure.countEntities("Elite") > 0 || adventure.playerHealth() + adventure.manaArmor() > 100 - d2i({num_enemies} * 1.8))\
-				 || (adventure.countEntities("Elite") > 0 && adventure.playerHealth() + adventure.manaArmor() < = {elite_dmg})\
-				 || (parity && false == needs_something)\)
-		gotoif (keel, {needs_armor} == false || adventure.mana() < 5)
-		adventure.useSpell("manaArmor")
-		gotoif (keel - 3, {needs_armor})
-		keel:
-		executesync (if (skipped, "{package}:xNOOPx", "{package}:kill enemies"))
-		; Update needs_something after clearing
-		goto (if (\
-				contains("UDLR", dir) && leon.adventure.running && (\
-						 needs_something && ({needs_bombs} || {needs_health} || {needs_mana} || {needs_keys} || {needs_armor})\
-							|| parity \
-							|| skipped \
+						adventure.isWall(curPos + vec(0.0, 1.0)) || y(curPos) >= 18.0, \
+						"", \
+						{posToString(x(curPos), y(curPos) + 1.0)} . "U:"
+				). if (\
+						adventure.isWall(curPos + vec(0.0, -1.0)) || y(curPos) < 1.0, \
+						"", \
+						{posToString(x(curPos), y(curPos) - 1.0)} . "D:"
+				). if (\
+						adventure.isWall(curPos + vec(1.0, 0.0)) || x(curPos) >= 18.0, \
+						"", \
+						{posToString(x(curPos) + 1.0, y(curPos))} . "R:"
+				). if (\
+						adventure.isWall(curPos + vec(-1.0, 0.0)) || x(curPos) < 1.0, \
+						"", \
+						{posToString(x(curPos) - 1.0, y(curPos))} . "L:" \
+				)\
+			)
+			gotoif (loop1, queue != "")
+			
+			continue:
+			lootPositions = leon.adventure.targetPositions . lootPositions
+			
+			loop2:
+			targetPos = sub (lootPositions, 0, 4)
+			curPos = {strToVec(targetPos)}
+			lootPositions = sub (lootPositions, 5, 99999)
+			
+			innerLoop2:
+			idx = {posToString(x(curPos), y(curPos))}
+			leon.adventure.targetPositions = if (\
+				{getField({posToString(\
+									x(curPos) - {nextX({getField(idx)})}, \
+									y(curPos) - {nextY({getField(idx)})}
+							)}
+					)} == "S" \
+					&& false == contains(leon.adventure.targetPositions, targetPos), \
+				targetPos . ":". leon.adventure.targetPositions, \
+				if (\
+						false == contains(leon.adventure.targetPositions, targetPos) \
+							&& {getTPos(idx)} != "", \
+							sub (\
+								leon.adventure.targetPositions, \
+								0, \
+								index (leon.adventure.targetPositions, {getTPos(idx)}, 0)
+					)\
+							. targetPos . ":" \
+							. sub (\
+									leon.adventure.targetPositions, \
+									index (leon.adventure.targetPositions, {getTPos(idx)}, 0), \
+									99999
 					), \
-				next, \
-				end \))
-		end:
-		wait(0.0)
-	};
-	"find loot":{
-		:import adventure_lib
-		:name {package}:find loot
-		
-		:global int turbo.cycles.max
-		:global int turbo.cycles
-		:global bool leon.adventure.running
-		:global string leon.adventure.targetPositions
-		:global int leon.adventure.maxDifficulty
-		
-		key.u()
-		key.j()
-		
-		isopen("arcade")
-		
-		leon.adventure.maxDifficulty + = \
-		if (contains(impulse(), "key.j"), -1, if (contains(impulse(), "key.u"), 1, 0))
-		gotoif (end, contains(impulse(), "key."))
-		
-		start:
-		turbo.cycles.max = max(turbo.cycles.max, turbo.cycles + 4000)
-		executesync ("{package}:analyze loot")
-		loop:
-		executesync ("{package}:find path")
-		executesync ("{package}:follow path")
-		leon.adventure.targetPositions = sub (leon.adventure.targetPositions, 5, 99999)
-		gotoif (loop, len(leon.adventure.targetPositions) > 0 && leon.adventure.running)
-		end:
-		wait(0.0)
-	};
-	"find path":{
-		:import adventure_lib
-		:name {package}:find path
-		
-		:global string leon.adventure.path
-		:global string leon.adventure.targetPositions
-		:global int turbo.cycles.max
-		:global int turbo.cycles
-		
-		:local vector curPos
-		:local string queue
-		:local string idx
-		:local string dir
-		:local string path
-		:local bool cantPhase
-		
-		#setField(index, value) lss ("_f" . {index}, {value})
-		#getField(index) lsg("_f" . {index})
-		
-		turbo.cycles.max = max(turbo.cycles.max, turbo.cycles + 4000)
-		leon.adventure.path = ""
-		cantPhase = false == adventure.hasItem("bootsPhasing")\
-		|| 0 < max(\
-			max(\
-					 max(\
-							adventure.countEntities("Chest"), \
-							adventure.countEntities("Enemy")\
-						 ), \
-					 adventure.countEntities("Elite")\
+						leon.adventure.targetPositions \
+				)\
+			)
+			
+			{setTPos(\
+					idx, \
+					if (\
+							false == contains(leon.adventure.targetPositions, targetPos)\
+								|| {getTPos(idx)} == sub (leon.adventure.targetPositions, index (leon.adventure.targetPositions, targetPos, 0) + 5, 4), \
+							targetPos, \
+							{getTPos(idx)} \
+					)\
+				)}
+			curPos -= {nextDir({getField(idx)})}
+			goto (if (\
+					{getField({posToString(x(curPos), y(curPos))})} != "S", \
+					innerLoop2, \
+					if (len(lootPositions) > 0, loop2, end)\
+				)\
+			)
+			
+			end:
+			wait(0.0)
+		};
+
+		"clear room":{
+
+			:import adventure_lib
+			:name {package}:clear room
+			
+			:global int leon.adventure.maxDifficulty
+			:global string leon.adventure.path
+			:global string leon.adventure.targetPositions
+			
+			:global string leon.adventure.room_direction
+			:local double difficulty
+			
+			#nextRoomLower if (\
+				x(adventure.roomCoords()) < 127.0 && y(adventure.roomCoords()) >= 127.0, \
+				"R", \
+				if (\
+						x(adventure.roomCoords()) >= 127.0 && y(adventure.roomCoords()) > 127.0, \
+						"D", \
+						if (\
+								x(adventure.roomCoords()) > 127.0 && y(adventure.roomCoords()) <= 127.0, \
+								"L", \
+								"U" \
+					)\
+				)\
+			)
+			#rotateLeft(x) sub ("LDRU", index ("ULDR", {x}, 0), 1)
+			#condRotateLeft(cond, x) sub (if ({cond}, "LDRU", "ULDR"), index ("ULDR", {x}, 0), 1)
+			
+			executesync ("{package}:farm keys")
+			
+			; We check based on current difficulty plus 1, because it's more efficient
+			; that way.
+			difficulty = {cur_difficulty(1.0)}
+			leon.adventure.room_direction= if (\
+				difficulty == 1.00 && leon.adventure.room_direction!= "", \
+				{rotateLeft(leon.adventure.room_direction)}, \
+				{condRotateLeft({survivable(difficulty)}, {nextRoomLower})} \
+			)
+			
+			leon.adventure.targetPositions = sub (\
+					"0918 0009 1809 0900", \
+					index ("U    L    R    D", leon.adventure.room_direction, 0), \
+					4 \
+			). ":"
+			
+			executesync ("{package}:find loot")
+			leon.adventure.path = leon.adventure.room_direction
+			executesync ("{package}:follow path")
+			end:
+			wait(0.0)
+		};
+
+		"farm keys":{
+
+			:import adventure_lib
+			:name {package}:farm keys
+			
+			:global string leon.adventure.path
+			:global bool leon.adventure.running
+			:global int leon.adventure.maxDifficulty
+			
+			:local double difficulty
+			:local bool parity
+			:local bool needs_something
+			:local bool skipped
+			
+			:local string dir
+			
+			#needs_bombs adventure.bombs() < 99 && difficulty >= 80.00 && adventure.hasItem("leechSword")
+			#needs_health adventure.playerHealth() < 99 && adventure.hasItem("leechSword")
+			#needs_mana (adventure.mana() < 99 || {needs_armor}) && adventure.hasItem("manaReaver") && adventure.hasItem("bookSpells")
+			#needs_keys adventure.keys() <= 10
+			#needs_armor adventure.manaArmor() < adventure.playerArmor()
+			#num_enemies round(difficulty * 0.1 + 3.0)
+			#elite_dmg d2i(floor(difficulty * 0.01 + 1.0)) * (d2i(ceil(ceil(difficulty * 0.39) * 1.5)) - adventure.playerArmor())
+			
+			goto (start)
+			
+			next:
+			parity = false == parity
+			leon.adventure.path = dir
+			executesync ("{package}:follow path")
+			start:
+			difficulty = {cur_difficulty(0.0)}
+			needs_something = {survivable(difficulty)} && ({needs_bombs} || {needs_health} || {needs_mana} || {needs_keys})
+			dir = sub ("XU   D  L  R", index (" 918 90 09 189", x(adventure.playerPos()) . y(adventure.playerPos()), 0), 1)
+			skipped = contains("UDLR", dir) && (\
+				(adventure.countEntities("Elite") > 0) != ({needs_bombs})\
+					&& (adventure.countEntities("Elite") > 0 || adventure.playerHealth() + adventure.manaArmor() > 100 - d2i({num_enemies} * 1.8))\
+					|| (adventure.countEntities("Elite") > 0 && adventure.playerHealth() + adventure.manaArmor() <= {elite_dmg})\
+					|| (parity && false == needs_something)\
+			)
+			gotoif (keel, {needs_armor} == false || adventure.mana() < 5)
+			adventure.useSpell("manaArmor")
+			gotoif (keel - 3, {needs_armor})
+			keel:
+			executesync (if (skipped, "{package}:xNOOPx", "{package}:kill enemies"))
+			; Update needs_something after clearing
+			goto (if (\
+					contains("UDLR", dir) && leon.adventure.running && (\
+							needs_something && ({needs_bombs} || {needs_health} || {needs_mana} || {needs_keys} || {needs_armor})\
+								|| parity \
+								|| skipped
+					), \
+					next, \
+					end \
+				)\
+			)
+			end:
+			wait(0.0)
+		};
+
+		"find loot":{
+
+			:import adventure_lib
+			:name {package}:find loot
+			
+			:global int turbo.cycles.max
+			:global int turbo.cycles
+			:global bool leon.adventure.running
+			:global string leon.adventure.targetPositions
+			:global int leon.adventure.maxDifficulty
+			
+			key.u()
+			key.j()
+			
+			isopen("arcade")
+			
+			leon.adventure.maxDifficulty += \
+			if (contains(impulse(), "key.j"), -1, if (contains(impulse(), "key.u"), 1, 0))
+			gotoif (end, contains(impulse(), "key."))
+			
+			start:
+			turbo.cycles.max = max(turbo.cycles.max, turbo.cycles + 4000)
+			executesync ("{package}:analyze loot")
+			loop:
+			executesync ("{package}:find path")
+			executesync ("{package}:follow path")
+			leon.adventure.targetPositions = sub (leon.adventure.targetPositions, 5, 99999)
+			gotoif (loop, len(leon.adventure.targetPositions) > 0 && leon.adventure.running)
+			end:
+			wait(0.0)
+		};
+
+		"find path":{
+
+			:import adventure_lib
+			:name {package}:find path
+			
+			:global string leon.adventure.path
+			:global string leon.adventure.targetPositions
+			:global int turbo.cycles.max
+			:global int turbo.cycles
+			
+			:local vector curPos
+			:local string queue
+			:local string idx
+			:local string dir
+			:local string path
+			:local bool cantPhase
+			
+			#setField(index, value) lss ("_f". {index}, {value})
+			#getField(index) lsg("_f". {index})
+			
+			turbo.cycles.max = max(turbo.cycles.max, turbo.cycles + 4000)
+			leon.adventure.path = ""
+			cantPhase = false == adventure.hasItem("bootsPhasing")\
+			|| 0 < max(\
+				max(\
+						max(\
+								adventure.countEntities("Chest"), \
+								adventure.countEntities("Enemy")
+					), \
+						adventure.countEntities("Elite")
 				), \
-			adventure.countEntities("Mimic")\)
-		queue = {posToString(x(adventure.playerPos()), y(adventure.playerPos()))} . "S:"
-		loop1:
-		curPos = {firstElementPos}
-		idx = sub (queue, 0, 4)
-		{setField(if ({getField(idx)} ! = "", "", idx), {firstElementDir})}
-		queue = sub (queue, 6, 99999) . if ({getField(idx)} ! = {firstElementDir}, \
-			"", \
-			if (\
-					 adventure.isWall(curPos + vec(0.0, 1.0)) && cantPhase \
-						|| max(x(curPos), y(curPos)) > = 18.0 \
-						|| x(curPos) < 1.0, \
-					 "", \
-					 {posToString(x(curPos), y(curPos) + 1.0)} . "U:" \
-				) . if (\
-					 adventure.isWall(curPos + vec(0.0, -1.0)) && cantPhase \
-						|| min(x(curPos), y(curPos)) < 1.0 \
-						|| x(curPos) > = 18.0, \
-					 "", \
-					 {posToString(x(curPos), y(curPos) - 1.0)} . "D:" \
-				) . if (\
-					 adventure.isWall(curPos + vec(1.0, 0.0)) && cantPhase \
-						|| max(x(curPos), y(curPos)) > = 18.0 \
-						|| y(curPos) < 1.0, \
-					 "", \
-					 {posToString(x(curPos) + 1.0, y(curPos))} . "R:" \
-				) . if (\
-					 adventure.isWall(curPos + vec(-1.0, 0.0)) && cantPhase \
-						|| min(x(curPos), y(curPos)) < 1.0 \
-						|| y(curPos) > = 18.0, \
-					 "", \
-					 {posToString(x(curPos) - 1.0, y(curPos))} . "L:" \
-				)\)
-		goto (if (\
-				queue == "" || contains(idx, sub (leon.adventure.targetPositions, 0, 4)), \
-				l2start, \
-				loop1 \))
-		
-		loop2:
-		leon.adventure.path = dir . leon.adventure.path
-		curPos - = {nextDir(dir)}
-		idx = {posToString(x(curPos), y(curPos))}
-		l2start:
-		dir = {getField(idx)}
-		gotoif (loop2, dir ! = "S")
-		
-		executesync ("{package}:refine path")
-		wait(0.0)
-	};
-	"follow path":{
-		:import adventure_lib
-		:name {package}:follow path
-		
-		:global string leon.adventure.path
-		:global bool leon.adventure.running
-		
-		:local int stepCount
-		:local vector curPos
-		:local bool waitChest
-		:local vector nextMove
-		
-		#nextDirection sub (leon.adventure.path, stepCount, 1)
-		#nextMove {nextDir({nextDirection})}
-		#curEntity adventure.entityType(curPos + {nextDir({nextDirection})})
-		
-		goto (start)
-		
-		bomb:
-		adventure.placeBomb()
-		goto (move)
-		
-		wait:
-		adventure.wait()
-		
-		move:
-		stepCount + = 1
-		start:
-		curPos = adventure.playerPos()
-		nextMove = {nextMove}
-		waitChest = contains(adventure.entityType(adventure.playerPos() + nextMove), "Chest")
-		
-		move2:
-		executesync ("TE2.2:stop")
-		adventure.move(nextMove); This is a no-op for invalid (0,0) moves
-		executesync ("TE2.2:start")
-		
-		loop:
-		; This uses the spacing of unused values in the index expression to be equivalent
-		; to lines to skip *backward*. This is much cheaper than having a nested ternary.
-		; index returns -1 for the fallthrough case. (UDLR -> move)
-		goto (if (\
-				stepCount < len(leon.adventure.path) && leon.adventure.running, \
+				adventure.countEntities("Mimic")\
+			)
+			queue = {posToString(x(adventure.playerPos()), y(adventure.playerPos()))} . "S:"
+			loop1:
+			curPos = {firstElementPos}
+			idx = sub (queue, 0, 4)
+			{setField(if ({getField(idx)} != "", "", idx), {firstElementDir})}
+			queue = sub (queue, 6, 99999) . if ({getField(idx)} != {firstElementDir}, \
+				"", \
 				if (\
-						 contains("BW", {nextDirection})\
-							|| x(curPos) ! = x(adventure.playerPos())\
-							|| y(curPos) ! = y(adventure.playerPos())\
-							|| waitChest && adventure.entityType(adventure.playerPos() + nextMove) == "", \
-						 (move - 1) - index ("W B", {nextDirection}, 0), \
-						 move2 \
+						adventure.isWall(curPos + vec(0.0, 1.0)) && cantPhase \
+							|| max(x(curPos), y(curPos)) >= 18.0 \
+							|| x(curPos) < 1.0, \
+						"", \
+						{posToString(x(curPos), y(curPos) + 1.0)} . "U:"
+				). if (\
+						adventure.isWall(curPos + vec(0.0, -1.0)) && cantPhase \
+							|| min(x(curPos), y(curPos)) < 1.0 \
+							|| x(curPos) >= 18.0, \
+						"", \
+						{posToString(x(curPos), y(curPos) - 1.0)} . "D:"
+				). if (\
+						adventure.isWall(curPos + vec(1.0, 0.0)) && cantPhase \
+							|| max(x(curPos), y(curPos)) >= 18.0 \
+							|| y(curPos) < 1.0, \
+						"", \
+						{posToString(x(curPos) + 1.0, y(curPos))} . "R:"
+				). if (\
+						adventure.isWall(curPos + vec(-1.0, 0.0)) && cantPhase \
+							|| min(x(curPos), y(curPos)) < 1.0 \
+							|| y(curPos) >= 18.0, \
+						"", \
+						{posToString(x(curPos) - 1.0, y(curPos))} . "L:" \
+				)\
+			)
+			goto (if (\
+					queue == ""|| contains(idx, sub (leon.adventure.targetPositions, 0, 4)), \
+					l2start, \
+					loop1 \
+				)\
+			)
+			
+			loop2:
+			leon.adventure.path = dir . leon.adventure.path
+			curPos -= {nextDir(dir)}
+			idx = {posToString(x(curPos), y(curPos))}
+			l2start:
+			dir = {getField(idx)}
+			gotoif (loop2, dir != "S")
+			
+			executesync ("{package}:refine path")
+			wait(0.0)
+		};
+
+		"follow path":{
+
+			:import adventure_lib
+			:name {package}:follow path
+			
+			:global string leon.adventure.path
+			:global bool leon.adventure.running
+			
+			:local int stepCount
+			:local vector curPos
+			:local bool waitChest
+			:local vector nextMove
+			
+			#nextDirectionsub (leon.adventure.path, stepCount, 1)
+			#nextMove {nextDir({nextDirection})}
+			#curEntity adventure.entityType(curPos + {nextDir({nextDirection})})
+			
+			goto (start)
+			
+			bomb:
+			adventure.placeBomb()
+			goto (move)
+			
+			wait:
+			adventure.wait()
+			
+			move:
+			stepCount += 1
+			start:
+			curPos = adventure.playerPos()
+			nextMove = {nextMove}
+			waitChest = contains(adventure.entityType(adventure.playerPos() + nextMove), "Chest")
+			
+			move2:
+			executesync ("TE2.2:stop")
+			adventure.move(nextMove); This is a no-op for invalid (0,0) moves
+			executesync ("TE2.2:start")
+			
+			loop:
+			; This uses the spacing of unused values in the index expression to be equivalent
+			; to lines to skip *backward*. This is much cheaper than having a nested ternary.
+			; index returns -1 for the fallthrough case. (UDLR -> move)
+			goto (if (\
+					stepCount < len(leon.adventure.path) && leon.adventure.running, \
+					if (\
+							contains("BW", {nextDirection})\
+								|| x(curPos) != x(adventure.playerPos())\
+								|| y(curPos) != y(adventure.playerPos())\
+								|| waitChest && adventure.entityType(adventure.playerPos() + nextMove) == "", \
+							(move - 1) - index ("W B", {nextDirection}, 0), \
+							move2
 					), \
-				end \))
-		
-		end:
-		wait(0.0)
-	};
-	"init":{
-		:import adventure_lib
-		:name {package}:init
-		
-		:global double leon.adventure.delay
-		:global string leon.adventure.path
-		:global bool leon.adventure.running
-		:global int leon.adventure.maxDifficulty
-		:global string leon.adventure.targetPositions
-		:global string leon.adventure.room_direction
-		:local int maxDifficultyInit
-		
-		key.r()
-		key.i()
-		
-		isopen("arcade")
-		
-		maxDifficultyInit = 255
-		leon.adventure.maxDifficulty = if (\
-			contains(impulse(), "key.i") || leon.adventure.maxDifficulty == 0, \
-			maxDifficultyInit, \
-			leon.adventure.maxDifficulty \)
-		
-		goto (if (\
-				contains(impulse(), "key.i"), \
-				end, \
-				if (leon.adventure.running, stop, start)\))
-		start:
-		executesync ("TE2.2:start")
-		gis("<size =0>leon.adventure",0)
-		leon.adventure.running = true
-		leon.adventure.path = ""
-		leon.adventure.targetPositions = ""
-		leon.adventure.room_direction = ""
-		gss("---Stop hiding---", "</size =0>")
-		loop:
-		executesync ("{package}:clear room")
-		leon.adventure.maxDifficulty = leon.adventure.maxDifficulty + if (\
-			{cur_difficulty(0.0)} > = i2d(leon.adventure.maxDifficulty)\
-				 && adventure.isCompleted(adventure.roomCoords()), \
-			2, \
-			0 \)
-		gotoif (loop, leon.adventure.running)
-		executesync ("TE2.2:stop")
-		stop:
-		leon.adventure.running = false
-		end:
-		wait(0.0)
-	};
-	"kill enemies":{
-		:import adventure_lib
-		:name {package}:kill enemies
-		
-		#enemyInDir(x, y) adventure.isEnemy(adventure.playerPos() + vec({x},{y}))
-		#enemyDirection if ({enemyInDir(0.0, 1.0)}, vec(0.0, 1.0), \
-				 if ({enemyInDir(1.0, 0.0)}, vec(1.0, 0.0), \
-					 if ({enemyInDir(0.0, -1.0)}, vec(0.0, -1.0), \
-						 if ({enemyInDir(-1.0, 0.0)}, vec(-1.0, 0.0), vec(0.0, 0.0)))))
-		#anyEnemies {enemyInDir(0.0, 1.0)} || {enemyInDir(0.0, -1.0)} || {enemyInDir(1.0, 0.0)} || {enemyInDir(-1.0, 0.0)}
-		
-		key.k()
-		
-		isopen("arcade")
-		
-		goto (if (contains(impulse(), "key."), turbostart, loop))
-		wait:
-		adventure.wait()
-		
-		attack:
-		executesync ("TE2.2:stop")
-		adventure.move({enemyDirection})
-		
-		turbostart:
-		executesync ("TE2.2:start")
-		
-		loop:
-		goto (if (\
-				{anyEnemies}, \
-				attack, \
+					end \
+				)\
+			)
+			
+			end:
+			wait(0.0)
+		};
+
+		"init":{
+
+			:import adventure_lib
+			:name {package}:init
+			
+			:global double leon.adventure.delay
+			:global string leon.adventure.path
+			:global bool leon.adventure.running
+			:global int leon.adventure.maxDifficulty
+			:global string leon.adventure.targetPositions
+			:global string leon.adventure.room_direction
+			:local int maxDifficultyInit
+			
+			key.r()
+			key.i()
+			
+			isopen("arcade")
+			
+			maxDifficultyInit = 81
+			leon.adventure.maxDifficulty = if (\
+				contains(impulse(), "key.i") || leon.adventure.maxDifficulty == 0, \
+				maxDifficultyInit, \
+				leon.adventure.maxDifficulty \
+			)
+			
+			goto (if (\
+					contains(impulse(), "key.i"), \
+					end, \
+					if (leon.adventure.running, stop, start)\
+				)\
+			)
+			start:
+			executesync ("TE2.2:start")
+			gis("<size=0>leon.adventure",0)
+			leon.adventure.running = true
+			leon.adventure.path = ""
+			leon.adventure.targetPositions = ""
+			leon.adventure.room_direction= ""
+			gss("---Stop hiding---", "</size=0>")
+			loop:
+			executesync ("{package}:clear room")
+			leon.adventure.maxDifficulty = leon.adventure.maxDifficulty + if (\
+				{cur_difficulty(0.0)} >= i2d(leon.adventure.maxDifficulty)\
+					&& adventure.isCompleted(adventure.roomCoords()), \
+				2, \
+				0 \
+			)
+			gotoif (loop, leon.adventure.running)
+			executesync ("TE2.2:stop")
+			stop:
+			leon.adventure.running = false
+			end:
+			wait(0.0)
+		};
+
+		"kill enemies":{
+
+			:import adventure_lib
+			:name {package}:kill enemies
+			
+			#enemyInDir(x, y) adventure.isEnemy(adventure.playerPos() + vec({x},{y}))
+			#enemyDirectionif ({enemyInDir(0.0, 1.0)}, vec(0.0, 1.0), \
+					if ({enemyInDir(1.0, 0.0)}, vec(1.0, 0.0), \
+						if ({enemyInDir(0.0, -1.0)}, vec(0.0, -1.0), \
+							if ({enemyInDir(-1.0, 0.0)}, vec(-1.0, 0.0), vec(0.0, 0.0)))))
+			#anyEnemies {enemyInDir(0.0, 1.0)} || {enemyInDir(0.0, -1.0)} || {enemyInDir(1.0, 0.0)} || {enemyInDir(-1.0, 0.0)}
+			
+			key.k()
+			
+			isopen("arcade")
+			
+			goto (if (contains(impulse(), "key."), turbostart, loop))
+			
+			wait:
+			adventure.wait()
+			
+			attack:
+			executesync ("TE2.2:stop")
+			adventure.move({enemyDirection})
+			
+			turbostart:
+			executesync ("TE2.2:start")
+			
+			loop:
+			goto (if (\
+					{anyEnemies}, \
+					attack, \
+					if (\
+							max(max(adventure.countEntities("Enemy"), adventure.countEntities("Elite")), adventure.countEntities("Mimic")) > 0, \
+							wait, \
+							if (contains(impulse(), "key."), stop, end)\
+					)\
+				)\
+			)
+			stop:
+			executesync ("TE2.2:stop")
+			end:
+			wait(0.0)
+		};
+
+		"refine path":{
+
+			:import adventure_lib
+			:name {package}:refine path
+			
+			:global string leon.adventure.path
+			
+			:local vector curPos
+			:local int stepCount
+			
+			#curDirectionsub (leon.adventure.path, stepCount, 1)
+			#insert(st,i,val) sub ({st},0,{i}) . ({val}) . sub ({st},{i},99999)
+			#escapeDirectionif (\
+				adventure.entityType(curPos + vec(0.0, 1.0)) == "" \
+					&& adventure.entityType(curPos + vec(0.0, 2.0)) == "" \
+					&& false == adventure.isWall(curPos + vec(0.0, 1.0))\
+					&& y(curPos) < 17.0, \
+				"BUUWDD", \
 				if (\
-						 max(max(adventure.countEntities("Enemy"), adventure.countEntities("Elite")), adventure.countEntities("Mimic")) > 0, \
-						 wait, \
-						 if (contains(impulse(), "key."), stop, end)\
-					)\))
-		stop:
-		executesync ("TE2.2:stop")
-		end:
-		wait(0.0)
+						adventure.entityType(curPos + vec(0.0, -1.0)) == "" \
+							&& adventure.entityType(curPos + vec(0.0, -2.0)) == "" \
+							&& false == adventure.isWall(curPos + vec(0.0, -1.0))\
+							&& y(curPos) > 1.0, \
+						"BDDWUU", \
+						if (\
+								adventure.entityType(curPos + vec(-1.0, 0.0)) == "" \
+								&& adventure.entityType(curPos + vec(-2.0, 0.0)) == "" \
+								&& false == adventure.isWall(curPos + vec(-1.0, 0.0))\
+								&& x(curPos) > 1.0, \
+								"BLLWRR", \
+								"BRRWLL"
+					)\
+				)\
+			)
+			
+			curPos = adventure.playerPos()
+			goto (start)
+			
+			rock:
+			leon.adventure.path = {insert(\
+					leon.adventure.path, \
+					stepCount, \
+					if (adventure.hasItem("eodArmor"), "BWWW", {escapeDirection})\
+				)}
+			stepCount += if (adventure.hasItem("eodArmor"), 4, 6)
+			
+			nextTile:
+			curPos += {nextDir({curDirection})}
+			stepCount += 1
+			
+			start:
+			goto (if (\
+					stepCount >= len(leon.adventure.path), \
+					end, \
+					if (\
+							adventure.entityType(curPos + {nextDir({curDirection})}) != "Rock"|| adventure.hasItem("hammer"), \
+							nextTile, \
+							rock \
+					)\
+				)\
+			)
+			end:
+			wait(0.0)
+		};
+
+		"adventure_lib":{
+
+			#package Adventure v3.2
+			
+			#strToVec(str) vec(s2d(sub ({str}, 0, 2), -1.0), s2d(sub ({str}, 2, 2), -1.0))
+			; converts the string in memory into a usable vector
+			
+			#posToString(x, y) sub (d2s(({x}) + 200.0), 1, 2) . sub (d2s(({y}) + 200.0), 1, 2)
+			; converts the specified position into a string 
+			
+			#firstElementPos {strToVec(queue)}
+			; determines what is the first element of the specified position
+			
+			#firstElementDir sub (queue, 4, 1)
+			; determines the direction of the first element in the queue
+			
+			#cur_difficulty(offset) (max(254.00 - x(adventure.roomCoords()), x(adventure.roomCoords())) + max(254.00 - y(adventure.roomCoords()), y(adventure.roomCoords())) + ({offset} - 254.0))
+			;
+			
+			#survivable(difficulty) (\
+				ceil(i2d(adventure.playerAttack()) * if (adventure.hasItem("impaler"), 1.1, 1.0)) >= \
+					round({difficulty} * 0.38 + 1.0) + round({difficulty} * 0.08)\
+					|| i2d(adventure.playerArmor()) >= ceil({difficulty} * 0.39)\
+			)&& i2d(leon.adventure.maxDifficulty) >= {difficulty} \
+			&& (adventure.hasItem("lantern") || {difficulty} < 100.0)
+			
+			#nextX(d) s2d(sub ("X 0 0 1-1", index (" U D R L", {d}, 0), 2), 0.0)
+			;
+			
+			#nextY(d) s2d(sub ("X 1-1 0 0", index (" U D R L", {d}, 0), 2), 0.0)
+			;
+			
+			#nextDir(d) vec({nextX({d})}, {nextY({d})})
+		};
 	};
-	"refine path":{
-		:import adventure_lib
-		:name {package}:refine path
-		
-		:global string leon.adventure.path
-		
-		:local vector curPos
-		:local int stepCount
-		
-		#curDirection sub (leon.adventure.path, stepCount, 1)
-		#insert(st,i,val) sub ({st},0,{i}) . ({val}) . sub ({st},{i},99999)
-		#escapeDirection if (\
-			adventure.entityType(curPos + vec(0.0, 1.0)) == "" \
-				 && adventure.entityType(curPos + vec(0.0, 2.0)) == "" \
-				 && false == adventure.isWall(curPos + vec(0.0, 1.0))\
-				 && y(curPos) < 17.0, \
-			"BUUWDD", \
-			if (\
-					 adventure.entityType(curPos + vec(0.0, -1.0)) == "" \
-						&& adventure.entityType(curPos + vec(0.0, -2.0)) == "" \
-						&& false == adventure.isWall(curPos + vec(0.0, -1.0))\
-						&& y(curPos) > 1.0, \
-					 "BDDWUU", \
-					 if (\
-							adventure.entityType(curPos + vec(-1.0, 0.0)) == "" \
-							&& adventure.entityType(curPos + vec(-2.0, 0.0)) == "" \
-							&& false == adventure.isWall(curPos + vec(-1.0, 0.0))\
-							&& x(curPos) > 1.0, \
-							"BLLWRR", \
-							"BRRWLL" \
-						 )\
-				)\)
-		
-		curPos = adventure.playerPos()
-		goto (start)
-		
-		rock:
-		leon.adventure.path = {insert(\
-				leon.adventure.path, \
-				stepCount, \
-				if (adventure.hasItem("eodArmor"), "BWWW", {escapeDirection})\)}
-		stepCount + = if (adventure.hasItem("eodArmor"), 4, 6)
-		
-		nextTile:
-		curPos + = {nextDir({curDirection})}
-		stepCount + = 1
-		
-		start:
-		goto (if (\
-				stepCount > = len(leon.adventure.path), \
-				end, \
-				if (\
-						 adventure.entityType(curPos + {nextDir({curDirection})}) ! = "Rock" || adventure.hasItem("hammer"), \
-						 nextTile, \
-						 rock \
-					)\))
-		end:
-			 wait(0.0)
-	};
-	"adventure_lib":{
-		#package Adventure v3.2
-		
-		#strToVec(str) vec(s2d(sub ({str}, 0, 2), -1.0), s2d(sub ({str}, 2, 2), -1.0))
-		#posToString(x, y) sub (d2s(({x}) + 200.0), 1, 2) . sub (d2s(({y}) + 200.0), 1, 2)
-		#firstElementPos {strToVec(queue)}
-		#firstElementDir sub (queue, 4, 1)
-		#cur_difficulty(offset) (max(254.00 - x(adventure.roomCoords()), x(adventure.roomCoords())) + max(254.00 - y(adventure.roomCoords()), y(adventure.roomCoords())) + ({offset} - 254.0))
-		#survivable(difficulty) (\
-			ceil(i2d(adventure.playerAttack()) * if (adventure.hasItem("impaler"), 1.1, 1.0)) > = \
-				 round({difficulty} * 0.38 + 1.0) + round({difficulty} * 0.08)\
-				 || i2d(adventure.playerArmor()) > = ceil({difficulty} * 0.39)\) && i2d(leon.adventure.maxDifficulty) > = {difficulty} \
-		&& (adventure.hasItem("lantern") || {difficulty} < 100.0)
-		#nextX(d) s2d(sub ("X 0 0 1-1", index (" U D R L", {d}, 0), 2), 0.0)
-		#nextY(d) s2d(sub ("X 1-1 0 0", index (" U D R L", {d}, 0), 2), 0.0)
-		#nextDir(d) vec({nextX({d})}, {nextY({d})})
-	};
-	
 }

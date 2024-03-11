@@ -7,7 +7,6 @@ ifstream in("Test.in");
 ofstream out("Test.out");
 
 
-
 void newline_indent(int tab_ammount) {
 	out << '\n';
 	for (int i = tab_ammount; i > 0; i--) {
@@ -19,11 +18,15 @@ bool comment;
 bool string_input;
 
 int space;
-int indenting;
+int indenting = 1;
 
 char input [3];
 
 int main() {
+
+	out << '{';
+	newline_indent(indenting);
+
 
 	while (in.get(input [2])) {
 		bool hidden_character = false;
@@ -33,11 +36,10 @@ int main() {
 			comment = true;
 		}
 
-		if (input [2] == '{') {
+		if (input [2] == '{' || input [2] == '(') {
 			if (comment == false) {
 				indenting++;
 			}
-
 		}
 		if (input [2] == '}' || input [2] == ')') {
 			if (comment == false) {
@@ -77,7 +79,7 @@ int main() {
 		if (input [1] == '\\') {
 
 			// end of a block case \}
-			if (input [2] == '}') {
+			if (input [2] == '}' || input [2] == ')') {
 				newline_indent(indenting);
 			}
 
@@ -109,7 +111,7 @@ int main() {
 				// we always want (\ and )\
 
 				if (input [0] != '(' && input [0] != ')') {
-					out << " ";
+					space ++;
 				}
 				hidden_character = true;
 			}
@@ -120,15 +122,28 @@ int main() {
 			hidden_character = hidden_character == false;
 		}
 
-		// prevents something=something
-		// turns it into something = something
-		if (input [1] != '=' && input [2] == '=' && space == 0) {
+		// read inputs that follow the pattern something=something
+		// outputs something = something
+
+		// when remaking the logic, I need to fix cases like !+-*/<>
+		// ##
+		// ! not
+		// + sum
+		// - subtract
+		// * multiply
+		// / devide
+		// < smaller than
+		// > bigger than
+		// ##
+
+		if ((input [2] != '!' && input [2] != '+' && input [2] != '-' && input [2] != '*' && input [2] != '/' && input [2] != '<' && input [2] != '>' && input [2] != '=') &&
+			input [2] == '=' && space == 0) {
 			out << " ";
 		}
 
 		// adding indents
 		if (input [2] != ' ') {
-			if (space == 1) {
+			if (space == 1 && input [0] != '\\' && input [1] != 'n') {
 				out << " ";
 			}
 			space = 0;
@@ -141,14 +156,18 @@ int main() {
 
 		// permits spacing between blocks
 		if ((input [1] == ':' && input [2] == '{') || (input [1] == '}' && input [2] == ';')) {
+			out << '\n';
 			newline_indent(indenting);
 		}
 
-		// don't let spaces through as they can cause issues
+		// don't memorise spaces as the logic can break down
 		if (input [2] != ' ' || string_input == true || comment == true) {
 			input [0] = input [1];
 			input [1] = input [2];
 		}
 	}
+
+	out << '}';
+
 	return 0;
 }
