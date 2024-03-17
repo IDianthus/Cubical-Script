@@ -39,6 +39,9 @@ int main() {
 		if (input [2] == '{' || input [2] == '(') {
 			if (comment == false) {
 				indenting++;
+				if (input [2] == '(' && input [1] != '{') {
+					space ++;
+				}
 			}
 		}
 		if (input [2] == '}' || input [2] == ')') {
@@ -55,14 +58,12 @@ int main() {
 			}
 		}
 
-		if (space == 3) {
-			out << '\t';
-			space = 0;
-		}
-
-
 		// make sure all doubles end in .0
-		if (int(input [0]) > 47 && int(input [0]) < 58 && input [1] == '.' && ((int(input [2]) < 48) || int(input [2] > 57))) {
+		if (
+				int(input [0]) > 47 && int(input [0]) < 58
+				&& input [1] == '.'
+				&& (int(input [2]) < 48 || int(input [2]) > 57)
+			) {
 			out << 0;
 		}
 
@@ -77,6 +78,11 @@ int main() {
 
 		// spacial cases
 		if (input [1] == '\\') {
+
+			if (input [2] == 't') {
+				out << '\t';
+				hidden_character = true;
+			}
 
 			// end of a block case \}
 			if (input [2] == '}' || input [2] == ')') {
@@ -134,16 +140,34 @@ int main() {
 		// / devide
 		// < smaller than
 		// > bigger than
+		// )
 		// ##
 
-		if ((input [2] != '!' && input [2] != '+' && input [2] != '-' && input [2] != '*' && input [2] != '/' && input [2] != '<' && input [2] != '>' && input [2] != '=') &&
-			input [2] == '=' && space == 0) {
+		
+		if (space == 3) {
+			out << '\t';
+			space = 0;
+		}
+
+		if (
+				input [1] != '!' &&
+				input [1] != '+' &&
+				input [1] != '-' &&
+				input [1] != '*' &&
+				input [1] != '/' &&
+				input [1] != '<' &&
+				input [1] != '>' &&
+				input [1] != '=' &&
+				input [1] != ' ' &&
+					input [2] == '=' &&
+					space == 0
+			) {
 			out << " ";
 		}
 
 		// adding indents
 		if (input [2] != ' ') {
-			if (space == 1 && input [0] != '\\' && input [1] != 'n') {
+			if (space != 0 && input [0] != '\\' && input [1] != 'n') {
 				out << " ";
 			}
 			space = 0;
@@ -155,19 +179,23 @@ int main() {
 		}
 
 		// permits spacing between blocks
-		if ((input [1] == ':' && input [2] == '{') || (input [1] == '}' && input [2] == ';')) {
+		if (
+			(input [1] == ':' && input [2] == '{') 
+			|| (input [1] == '}' && input [2] == ';')
+		) {
 			out << '\n';
 			newline_indent(indenting);
 		}
 
-		// don't memorise spaces as the logic can break down
-		if (input [2] != ' ' || string_input == true || comment == true) {
+		// don't keep spaces in memory as the logic can fail
+		if (input [2] != ' ' || (string_input == false && comment == false)) {
 			input [0] = input [1];
 			input [1] = input [2];
 		}
 	}
 
-	out << '}';
+	out << '\n';
+	out << "}";
 
 	return 0;
 }
