@@ -24,7 +24,7 @@ char input [3];
 
 int main() {
 
-	out << '{';
+	cout << "{\b";
 	newline_indent(indenting);
 
 
@@ -188,14 +188,12 @@ int main() {
 		}
 
 		// don't keep spaces in memory as the logic can fail
-		if (input [2] != ' ' || (string_input == false && comment == false)) {
+		if (input [2] != ' ' || string_input == false) {
 			input [0] = input [1];
 			input [1] = input [2];
 		}
 	}
-
-	out << '\n';
-	out << "}";
+	cout << ";\n}";
 
 	return 0;
 }
