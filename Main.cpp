@@ -24,7 +24,7 @@ char input [3];
 
 int main() {
 
-	cout << "{\b";
+	out << "{";
 	newline_indent(indenting);
 
 
@@ -40,7 +40,7 @@ int main() {
 			if (comment == false) {
 				indenting++;
 				if (input [2] == '(' && input [1] != '{') {
-					space ++;
+					space++;
 				}
 			}
 		}
@@ -85,26 +85,15 @@ int main() {
 			}
 
 			// end of a block case \}
-			if (input [2] == '}' || input [2] == ')') {
+			if (input [2] == '}' || input [2] == ')' || input [2] == 'n') {
 				newline_indent(indenting);
 			}
 
 			// new line \n
 			if (input [2] == 'n') {
 
-				// on \\n it must keep comment state
-				if (input [0] != '\\') {
-					// otherwise it exits comments
-					comment = false;
-				}
-
 				newline_indent(indenting);
-
-				// space cannot increase unless it's a comment, if it detects a space it adds a new tab
-				if (space != 0) {
-					out << '\t';
-					space = 0;
-				}
+				comment = false;
 
 				// prevents typing n on a new line
 				hidden_character = true;
@@ -117,7 +106,7 @@ int main() {
 				// we always want (\ and )\
 
 				if (input [0] != '(' && input [0] != ')') {
-					space ++;
+					space++;
 				}
 				hidden_character = true;
 			}
@@ -143,7 +132,7 @@ int main() {
 		// )
 		// ##
 
-		
+
 		if (space == 3) {
 			out << '\t';
 			space = 0;
@@ -176,24 +165,26 @@ int main() {
 		// type out allowed characters
 		if (hidden_character == false) {
 			out << input [2];
+			if (input [2] == '\\') {
+				newline_indent(indenting);
+				input [2] = ' ';
+			}
 		}
 
 		// permits spacing between blocks
-		if (
-			(input [1] == ':' && input [2] == '{') 
-			|| (input [1] == '}' && input [2] == ';')
-		) {
+		if ((input [1] == ':' && input [2] == '{') || (input [1] == '}' && input [2] == ';')) {
 			out << '\n';
 			newline_indent(indenting);
 		}
 
 		// don't keep spaces in memory as the logic can fail
-		if (input [2] != ' ' || string_input == false) {
+		if (input [2] != ' ' || false == (string_input == false || comment == false)) {
 			input [0] = input [1];
 			input [1] = input [2];
 		}
 	}
-	cout << ";\n}";
+
+	out << ";\n}";
 
 	return 0;
 }
