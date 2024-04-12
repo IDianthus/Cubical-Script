@@ -1,757 +1,1849 @@
-{
-
-	"workspaces":{
-
-		"museum2":{
-
-			"museum_macros":{
-
-				; Standardized (package) naming across all the scripts
-
-				#script(name) D0S.Museum v4.7:{name}
-				; Keybindings. You can edit these here, or edit them in the scripts directly
-				; (but it will be much more error-prone).
-
-				#up w
-				#downs
-				#start m
-				; Name of the budget variable, which begins the script-hiding block.
-
-				#budget "<size=0>mb**"
-				; Turn an element string into an index. For our purpose, all the indexes
-				; need to be multiplied by two, so we look for the index of the first two
-				; characters of the element.
-				; The "offset" string allows us to concatenate on a string and thus add a
-				; constant to the result.
-
-				#element_to_index_base (element, offset) index ({offset} . "lielfidanaaiwaeaun", sub ({element}, 0, 2), 0)
-				; Macro for determining the number of tiers we can boost, given our budget and
-				; stones of "in_tier".
-				; We allocate 1% of budget to each stone. Based on the tier of the stones we
-				; can buy, they cost 2000 * 18^in_tier / 18 each. (We ignore the extra cost
-				; of universal stones.) This determines how many stones we can buy, and thus,
-				; the max tier.
-				; There is an extra division by 9 and a floor. This means that if the level can't
-				; be raised by at least 2 levels, the quantity in the log will be rounded down to 0,
-				; and thus the log will result in -infinity. We add back the 2 levels on the outside.
-
-				#up_tiers (in_tier) floor (gdg ({budget}) / (100.00 * 2000.00 * 9.00 / 18.0) / (18.00 ^ ({in_tier}))) / 3.00 + 2.0
-				; The top tier that can be achieved, given input stones of "in_tier". Capped
-				; either at +11 levels, or by the budget function of up_tiers.
-				; If we can't reach +2 levels, up_tiers returns -inf, which will result in -1.0
-				; from this function.
-
-				#top_tier (in_tier) max (-1.0, min(50.0, min(11.0, {up_tiers({in_tier})}) + ({in_tier})))
-			};
-
-			"Buy":{
-
-				:import museum_macros
-				:name {script(Buy)}
-				; This isn't included in this subdirectory, but comes from the factory/ directory.
-
-				:import worker_storage_lib
-				; This script is responsible for buying all stones.
-				;
-				; It also contains initialization logic for variables. They must be set in the
-				; proper order, so that the remain hidden inside our <size=0> block. This also
-				; reads/writes the budget from worker storage, and increment/decrements it
-				; if the right keys are pressed.
-
-				key.{up}()
-				key.{down}()
-
-				isopen("museum")
-				:global string museum_status
-				:global string offer_tiers
-
-				:global int museum_tier
-				:global int target_tier
-				:global int museum_pos
-				:global int turbo.register
-				:global int turbo.cycles
-
-				:local string local_elem
-
-				:local int local_buy_amount
-
-				:local double worker_val
-
-				; If we're being called from Combine, we're a buyer.
-				; Otherwise, if we're being invoked due to key-impulse, but the combiner is
-				; currently running, abort. We don't want to change the budget in the middle
-				; of things.
-
-				goto (if (\
-						contains ("{script(Combine)}", impulse ()), \
-						buy, \
-						if (\
-							contains ("key.{up}|key.{down}", impulse ()) && \
-							contains (museum_status, "Combining"), \
-							end, \
-							init
-						)
-					))
-				init:
-
-				; We do *not* direct-start turbo, because we want to detect broken turbo installs.
-				; In particular, if someone has turbo v2.1 still installed, that would break, but in a way
-				; that's not easy to programatically detect if we direct-start at this point.
-
-				executesync ("TE2.2:start")
-
-				; Use worker_storage_lib to find a worker_slot to use for permanent storage.
-
-				#prefix [museum]
-				:local int worker_slot
-
-				{worker_lib_line_1({prefix})}
-				{worker_lib_line_2}
-				; Fetch the budget from the chosen worker. The s2d fallback handles the case
-				; where we're allocating new storage, as well.
-
-				worker_val = s2d (sub (worker.name (worker_slot), {len({prefix})}, 99), 1e11)
-
-				; Ensure this value is set before we start hiding variables.
-				; If we're launching on wakeup(), the other turbo variables will get set
-				; in time, but this one might not.
-
-				turbo.cycles = turbo.cycles
-
-				; If we're incrementing or decrementing the budget, round it to a fixed
-				; amount. This allows users to set it to a specific amount by modifying the
-				; worker if they wish, but we'll always get clean set-points when changing
-				; via the UI.
-				; The lower bound is 1e5, since at that point you can't buy any stones
-				; (according to our budget).
-				; Also, set budget to -1 if there are no worker slots available. This is our
-				; signal to Main, so that it can display an appropriate error message.
-
-				gds ({budget}, if (\
-						worker_slot == 200, \
-						-1.0, \
-						if (\
-							contains (impulse (), "key."), \
-							(10.00 ^ 0.5) ^ max (10.0, min(560.0, \
-									round (worker_val // (10.00 ^ 0.5)) + \
-									if (contains (impulse (), "key.{up}"), 1.0, -1.0)
-								)), \
-							worker_val
-						)
-					))
-				; Save the budget back. There's always enough room for the full value.
-
-				worker.setName (\
-					worker_slot - if (worker_slot < 100, 0, 100), \
-					"{prefix}". gdg ({budget})
-				)
-				; Set other variables that need to happen before we close the script block.
-				; If target_tier is -2, we're being invoked because start was pressed: Either
-				; during the timer countdown, or to abort a running combine. Either way,
-				; museum_tier needs to be set to 0 to signal no countdown.
-				;
-				; Otherwise, we leave it unchanged, which will usually mean the countdown remains
-				; in effect.
-
-				museum_tier = if (target_tier == -2, 0, museum_tier)
-				museum_pos = -1
-
-				; Signal Main to wake up. We only want to override target_tier if it's idle,
-				; i.e. set to 0 - other situations show that it's in use, and notifying about
-				; changing budget is the lowest priority.
-
-				target_tier = if (target_tier == 0, -3, target_tier)
-
-				; Time for more ugly math! When we set preferred tier to "pref", we get stones in
-				; the range [pref-10, pref], at uniform. We want our best stone to be in that
-				; range - the one that we can *just* afford to do +11 levels from. Stones smaller
-				; than that fall off at a rate of 1 tier/level, and stones higher fall off at a
-				; rate of (18 log 3 - 1), or ~1.63 tiers/level. To maximize the potential of the
-				; range, we want the top and bottom of the range to have equally high max_tiers,
-				; so max_tier(pref - 10.5) = max_tier(pref + .5). (The halves make the range of
-				; size 11, which is needed to properly match the actual integer-sized range.)
-				;
-				; Substituting gives pref - 10.5 + 11 = log_3(budget / (2000*100/18) / 18^(pref+.5)) + pref+.5,
-				; 0 = log_3(budget / K) - (pref + .5) * log_3(18),
-				; pref + .5 = log_3(budget / K) / log_3(18),
-				; pref = log_18(budget / K) - .5,
-				; pref = log_18(budget / (2000*100/18) / 18^.5),
-				; pref = log_18(budget / (2000*100/18^.5))
-				;
-				; The result ends up being intuitive - since the range of stones spans 11 tiers, and
-				; our uptiers is also +11 tiers, we want to match the preferred tier to the point where
-				; we can just barely afford to buy the stone.
-
-				museum.setPreferredTier (max (1, min(50, d2i ( (gdg ({budget}) / (2000.00 * 100.00 / (18.00 ^ 0.5))) // 18.0))))
-
-				; We don't care about waiting for the frame break, so manipulate the value
-				; directly instead of using "turbo stop".
-				; This also gives some (useful) extra turbo frames to our caller, Main.
-
-				turbo.register -= 1
-				buy:
-
-				; If we're only upgrading 5 or fewer levels, we buy one-at-a-time to avoid
-				; overbuying. The number of operations is so small that it won't be slow.
-				; This actually maxes out on speed at +7 levels, because at that point we are
-				; buying 6 each cycle, which matches the amount the combines use.
-
-				local_buy_amount = max (1, (target_tier - museum_tier - 5) * 3)
-
-				; If we're a buyer, use the stone in inventory.
-				; Otherwise, buy nothing until we can exit normally.
-
-				local_elem = if (\
-					contains ("{script(Combine)}", impulse ()), \
-					element ("inventory", 0), \
-					""
-				)
-				; Because of turbo exec, this script will keep running every cycle, until
-				; the frame pause. At that point, it will exit, and we rely on Combine to
-				; restart it.
-				;
-				; Everything is very carefully engineered to make this expression as minimal
-				; as possible. It's worth spending extra cycles in set-up in order to remove
-				; a single node from this expression.
-
-				museum.buyTier (local_elem, museum_tier, local_buy_amount)
-				end:
-			};
-
-			"Combine":{
-
-				:import museum_macros
-				:name {script(Combine)}
-				; This script is responsible for actually combining gems.
-				;
-				; That's true in two senses: It both has the actual call to Combine(), and
-				; also the logic immediately surrounding it that runs the combines and checks
-				; to see if the loop is done.
-
-				:global int museum_tier
-				:global int target_tier
-				:global int museum_pos
-				:global int turbo.cycles.max
-				:global int turbo.register
-
-				:local double end_time
-
-				; Stop our parent. If we're invoking ourselves, this is a wasted cycle.
-
-				stop ("{script(Calculate)}")
-
-				; If we're invoking ourselves, we're a dedicated Combine()er.
-				; Otherwise, check to see if we've already reached our goal.
-				; If we have, we can exit early, otherwise fall through to the main logic.
-
-				goto (if (\
-						contains (impulse (), "{script(Combine)}"), \
-						combine, \
-						if (tier ("inventory", 0) >= target_tier, done, restart_loop)
-					))
-				; Keep restarting the buy and combine scripts whenever the turbo frame ends.
-				; They rely on the 1-cycle-end-of-script-loop property of turbo to function,
-				; so we also keep the cycle max up for efficiency.
-
-				restart_loop:
-
-				; We start 3 copies of combine, because each combine only combines 3 gems.
-				; (As opposed to when you do it manually: then it does 2 combines, once on
-				; mousedown and one on mouseup.) 3 is roughly optimal: there are very few
-				; positions the inventory can be in that don't support 3 combines between buys,
-				; whereas there are significantly more for 4.0 0And combine is one of the most
-				; time-expensive operations in the loop, so we don't want to run it pointlessly.
-
-				execute ("{script(Combine)}")
-				execute ("{script(Combine)}")
-				execute ("{script(Combine)}")
-
-				; Start the buyer. By running this after the combiners, we'll always
-				; end each cycle with a full inventory, which is important for the check below.
-
-				execute ("{script(Buy)}")
-
-				; Extend the max duration. There is a possible race condition where we might
-				; already be exiting turbo due to being at too many cycles; this is dealt with
-				; (and discussed more) in Calculate. We can never be in the race condition
-				; internally, because it does not take nearly 200 cycles to get from the
-				; "turbo stop" to this line.
-				;
-				; Normally we would calculate this based on cycles and cycles.max, but here
-				; we're just setting it to the maximum that turbo supports. We rely on our own
-				; fps-based throttling, instead. If we *do* manage to go the whole 50000 cycles
-				; in less than 200ms, there's an interesting timing effect where we will execute
-				; TE2.2:stop *exactly* as the next turbo cycle is beginning, leading to a wasted
-				; turbo cycle and drastically slower execution.
-
-				turbo.cycles.max = 50000
-
-				; Calculate a time to end the loop at. This is 1/5 of a second in the future,
-				; so it should reliably be 5 FPS.
-
-				end_time = now () + 10000000.00 / 5.0
-
-				; The core condition to wait for. This condition needs to be as minimal as
-				; possible, because it is draining CPU time away from the important combine/buy
-				; tasks every cycle. (So is the turbo exec machinery, but we can't help that.)
-
-				waituntil (tier ("inventory", 0) >= target_tier || now () > end_time)
-
-				; If we are done, stop the buyers ASAP, to avoid wasting money. The condition
-				; here relies on the condition above for correctness, but is simpler.
-				; (Technically there's an edge case if it finishes right at the end, but the
-				; number of cycles required means that won't happen.)
-
-				stop (if (now () > end_time, "", "{script(Buy)}"))
-
-				; We restart turbo by changing the variable directly, so that there isn't a
-				; "turbo start" script taking up cycles. In comparison, we stop turbo with
-				; executesync(), because we want to block until the end of the frame, and
-				; the end of the frame will naturally clean up the script.
-
-				executesync ("TE2.2:stop")
-				turbo.register += 1
-
-				; Do another loop if we're not done yet.
-				; Abort if the 3rd-to-last power stone is not the tier we expect it to be.
-				; Because Buy runs after the combines, and won't have been stopped
-				; in the case where we're not done yet, we can expect the "fill inventory" buy
-				; to have left the final position with our target tier. Checking this way
-				; catches both museum rollover and out-of-resources.
-				;
-				; The reason for checking the 3rd-to-last slot, and not the last slot, has to
-				; do with the way combine processing is run: It starts checking for combinable
-				; stuff from the first slot down. So it's possible for two base-tier stones to
-				; be left in the last two slots, but there can't be *3* in the last 3, because
-				; they would be combine-eligible. *Unless* they were just bought. (This isn't
-				; quite true, because the combines might be occupied with higher-tier stones,
-				; but if we've exausted resources or had rollover, it will rapidly become true.)
-				;
-				; This also interacts in predictable ways with another couple of common issues:
-				; lacking the "quick combine" skill and not having all the inventory slots.
-				; If all the slots aren't purchased, this condition will always fail immediately.
-				; The symptom will be that the combiners seems to "never do anything."
-				; Conversely, without quick combine no progress will ever be made. As soon
-				; as a power stone is hit that needs fast leveling, it will get "stuck" there.
-				; This is a sure sign of lacking quick-combine.
-				;
-				; If we are doing a "careful" combine without fill-inventory, it shouldn't take
-				; more than 1000 cycles, so this condition won't be a problem.
-
-				gotoif (restart_loop, \
-					tier ("inventory", 0) < target_tier && tier ("inventory", 27) == museum_tier)
-				done:
-
-				; This is the signal for Main that it should continue.
-
-				museum_tier = -2
-
-				; Now that we're done, move the finished stone back to "equipped". This also
-				; moves partial/original stones back, if we cancelled via {start}.
-				;
-				; Even though this happens after signalling, we get one extra cycle as a
-				; "delay slot" before we're stopped by Main.
-
-				museum.moveTo ("inventory", 0, "loadout", museum_pos)
-				combine:
-
-				; Because of turbo exec, this script will keep running every cycle, until
-				; the frame pause. At that point, it will exit, and we rely on Combine to
-				; restart it.
-				; There's no point in using a variable for the combine limit; halting the
-				; combines is handled by the end of turbo. Having the limit be a constant
-				; removes one node from the hottest execution path.
-
-				combine (50)
-			};
-
-			"Calculate":{
-
-				:import museum_macros
-				:name {script(Calculate)}
-				; This script contains (stub) logic for handling key.{start}. This would be part
-				; of Main normally, but there can only be 2 impulses per script at the
-				; resource-cost-levels we're targeting.
-				;
-				; The final (bulk) of the logic deals with buying test stones from the
-				; offshore market and doing calculations/preparations for the actual
-				; combining, which is handled by Combine. This script sets museum_tier
-				; and target_tier, which directly drive the combining process.
-
-				key.{start}()
-
-				:global int museum_tier
-				:global int target_tier
-				:global int museum_pos
-
-				:global double budget
-
-				:global string offer_tiers
-
-				:global int turbo.register
-				:global int turbo.cycles
-				:global int turbo.cycles.max
-
-				:local int offer_idx
-
-				; If we're called from key.{start}, then check if the museum
-				; is open. If it is, signal Main, otherwise exit. We can't just set a
-				; condition on the script, because that would possibly mess up scripts
-				; that execute us, on exiting the museum.
-				; This will overwrite target_tier if we are currently combining,
-				; causing an early exit and leading to main resuming - which is what we
-				; want.
-				; If we're called from Main, then we need to set museum_tier to 0, because it
-				; serves as a signal variable. Main waits on it for BuyOffshore/Combine to be done.
-				;
-				; It's ugly to fold this up into a single conditional set, but between the fact that
-				; we need museum_tier reset on the first instruction, and some of the other conditions
-				; involved, it wouldn't be less complicated to do it as two instructions.
-
-				global.int.set (\
-					if (contains ("key.{start}", impulse ()), "target_tier", "museum_tier"), \
-					if (contains ("key.{start}", impulse ()), \
-						if (isopen("museum"), -2, target_tier), \
-						0
-					)
-				)
-				; If we're called from key.{start}, we're done now. Otherwise, if offer_tiers is
-				; the default, calculate it now, but don't bother re-doing work if we don't have to.
-				; (This would be easier to do at the top, but there's no room in Main.)
-
-				goto (if (\
-						contains ("key.{start}", impulse ()), \
-						end, \
-						if (\
-							contains (offer_tiers, "0101010101010101-1"), \
-							get_offers, \
-							skip_offers
-						)
-					))
-				; This loop calculates the best stone to buy, for each element.
-
-				get_offers:
-
-				; Turn an element string into an index. The base version is defined in museum_macros.
-
-				#element_to_index (offset) {element_to_index_base(museum.slotElement (offer_idx), {offset})}
-				; This monstrousity updates the value of the best tier to use for an element.
-				; The element is the element in slot [offer_idx], and we're assessing whether
-				; that offer will be an improvement.
-				; The base logic relies on the top_tier formula.
-
-				offer_tiers = if (\
-					museum.slotElement (offer_idx) == ""|| \
-					{top_tier(i2d (museum.slotTier (offer_idx)))} <= \
-					{top_tier(s2d (sub (offer_tiers, {element_to_index("")}, 2), -1.0))}, \
-					offer_tiers, \
-					sub (offer_tiers, 0, {element_to_index("")}) . \
-					sub (i2s (100 + museum.slotTier (offer_idx)), 1, 2) . \
-					sub (offer_tiers, {element_to_index("  ")}, 99)
-				)
-				; There are max 10 offer slots, numbered 0 through 9.0 0We'll exit after #9.0
-
-				offer_idx = offer_idx + 1
-				gotoif (get_offers, offer_idx < 10)
-				skip_offers:
-				clear ("inventory")
-
-				; Load the pre-calculated tier of stone we are buying.
-
-				museum_tier = s2i (sub (\
-						offer_tiers, \
-						{element_to_index_base(element ("loadout", museum_pos), "")}, \
-						2
-					), -1)
-				; Determine "target_tier", the level we are trying to upgrade to. In the
-				; best case, we can upgrade 11 levels past the tier of the stones we can
-				; buy from the museum. (Which may only be tier 1.0)
-
-				target_tier = if (min(tier ("loadout", museum_pos), museum_tier) < 0, \
-					-1, \
-					d2i ({top_tier(i2d (museum_tier))})
-				)
-				; If tier(museum_pos) < museum_tier, buy one of the target stone.
-				; In this case, we're about to move our stone into the 0th slot, and
-				; if it's below the base level it will never get combined with, so
-				; the combine loop will never end.
-				; It's OK to still move it, because there's enough room in the inventory
-				; for an extra stone.
-				; If we can't afford the stone, or for some other reason are unable to buy
-				; it, then we'll also fall through in Combine and move the original stone
-				; back when we're done. In this way, we can always avoid eating stones,
-				; no matter what happens.
-
-				museum.buyTier (\
-					element ("loadout", museum_pos), \
-					museum_tier, \
-					if (tier ("loadout", museum_pos) < museum_tier, 1, 0)
-				)
-				move ("loadout", museum_pos, "inventory")
-
-				; Extend turbo for a little longer. There's a race condition where we might
-				; run out of cycles and start a new frame, but even if we do that on this
-				; line, the new frame will start in time for the Combiners to loop properly,
-				; and for the max-setting line in Combine to set the max to its proper value.
-				;
-				; Otherwise, this ensures that we stay in the current loop until the line
-				; in Combine sets cycles.max to its full value.
-				; This is a small enough extension so that if we never enter the main loop
-				; of Combine, we'll still eventually hit turbo.cycles.max and start a new frame.
-				; (I.e. we can't loop indefinitely with this extension alone.)
-
-				turbo.cycles.max = max (turbo.cycles.max, turbo.cycles + 15)
-
-				; executesync() is used here to pause us until our child Combine stops us.
-				; If we jump from the top, we have to be prepared to loop back to this instruction.
-				; in that case, this needs to be a no-op.
-
-				executesync (if (contains ("key.{start}", impulse ()), \
-						"%%museum-nop%%", \
-						"{script(Combine)}"
-					))
-				end:
-			};
-
-		"Main":{
-
-				:import museum_macros
-				:name {script(Main)}
-				; The "main" script of the combiner. It starts on wakeup/entry into the
-				; museum, and keeps running until the user leaves the museum. This is because
-				; it is responsible for maintaining the UI global "museum_status", which
-				; both conveys information to the user and also ends a <size=0> block that
-				; hides our internal global variables. When we leave the museum, this is
-				; set to "</size>" to blank the display and leave no clutter.
-				;
-				; This script also runs the outer part of the loop, which updates the
-				; position of the combiner. It is well-suited to this, because it is the
-				; only script that doesn't get stop()'ed at some point.
-
-				:global int max_craft_tier
-				:global int museum_pos
-
-				:global string museum_status
-				:global string offer_tiers
-
-				:global int museum_tier
-				:global int target_tier
-				:global int turbo.cycles
-				:global int turbo.register
-
-				wakeup ()
-
-				open.museum ()
-
-				isopen("museum")
-				top:
-
-				; Launch Buy to initialize the global variables in the proper order.
-				; We re-do this after every run, because it resets museum_pos for us.
-
-				executesync ("{script(Buy)}")
-
-				; Two characters per tier. Universal is last. These are initialized to what can
-				; be bought from the store.
-				; This logically belongs in "Buy", but is moved out of there to make space.
-
-				offer_tiers = "0101010101010101-1"
-
-				; Macro-substitution for the museum timer, allows mocking it out easily for
-				; testing.
-
-				#timer museum.timer ()
-
-				; No-offshore-market fix: If we get here with museum_tier == -2 (which is the
-				; waiting-to-start state), but the timer is *exactly* 1 hour, this means the user
-				; doesn't have the offshore market and is getting the default value. In this case,
-				; reset museum tier so that the script stops properly.
-
-				museum_tier = if (\
-					museum_tier == -2 && {timer} == 60.00 * 60.0, \
-					0, \
-					museum_tier
-				)
-				; This loop usually runs without turbo, although it can have lingering
-				; turbo from other scripts without bad effects. It keeps the status line
-				; up-to-date while the museum is not running.
-
-				status_loop:
-
-				; We use target_tier to receive signals from other scripts. 0 means nothing
-				; is hapenning, so we always reset to 0 at the top.
-
-				target_tier = 0
-
-				; This is a useful sub-expression when displaying numbers in rounded
-				; scientific notation. We want to extract the exponent, but for numbers like
-				; .9996, we know they'll round up to 1.00 (when rounded to 3 places), so we
-				; have to consider them as an exponent higher already.
-				; The parameter is to allow for the injection of a constant for constant
-				; folding in later expressions.
-
-				#adjusted_exp (x) floor (gdg ({budget}) // 10.00 - (0.9995 // 10.00 + {x}))
-				; Stringify the budget in rounded-scientific notation, rounded to 3 digits
-				; (2 after the decimal place). This is an awkwardly large expression, but
-				; it's really the best we can do with the tools we have.
-				; The "2" passed to adjusted_exp subtracts 2 from the exponent, so the
-				; overall effect is to multiply by 100 (before rounding).
-
-				#rounded_budget round (gdg ({budget}) / (10.00 ^ {adjusted_exp(2.0)})) / 100.00 . \
-				"e". {adjusted_exp(0.0)}
-				; Normally we would take the ceiling of the time remaining, because that's
-				; how timers work. (You show 1 second left until the time hits 0.0)
-				; However, the display timer in the museum uses floor, and we want to match
-				; that, so we use floor too.
-				; The parameter is a divisor, to make dealing with minutes easier.
-
-				#time_floor (x) floor ({timer}/ {x})
-				; Set the status. There's a lot of cases to this:
-				; * Error for no workers available.
-				;   - We don't have direct visibilty to worker_slot, but Buy will signal the
-				;     error by setting budget to negative, which will never happen otherwise.
-				; * Error for a bad Turbo install. This is disturbingly frequent.
-				; * Show our current budget, with green highlighting to prompt that this
-				;   can be adjusted.
-				; * Show a brief help line, also with green highlighting to link the keys
-				;   to the budget.
-				; * If we've pressed {start}, show the Combining message instead. This is
-				;   important because certain things key off of it. target_tier = -2 is the
-				;   signal for this.
-				;
-				; We don't bother doing anything special when the museum isn't open, since
-				; we'll handle that at the bottom of the script.
-
-				museum_status = if (\
-					gdg ({budget}) < 0.0, \
-					"</size>error =<color =#fb3>No available workers!</color>", \
-					if (\
-						turbo.cycles == 0, \
-						"</size>error =<color =#fb3>Turbo exec is not working</color>", \
-						"</size>museum =<color =#2f4>". \
-						{rounded_budget} . \
-						"</color> <color =#fff>budget</color><br> \
-						<color =#0df><color =#2f4>{up}</color>/<color =#2f4>{down}</color> changes, <color =#2f4>{start}</color> ". \
-						if (\
-							museum_tier != -2, \
-							"begins</color>", \
-							"stops</color><br><color =#fff>Waiting ". \
-							{time_floor(60.0)} . ":". sub (d2s ({time_floor(1.0)} % 60.00 + 100.0), 1, 2) . \
-							"</color>"
-						)
-					)
-				)
-				; The s2i()/sub() expression is a jump-table, where the string values are
-				; line numbers.
-				; The values that target_tier can have when we get here are 0
-				; (if it hasn't been set to anything since it was cleared at the top of
-				; status_loop), -2 (set when key.{start} is pressed), and -3 (set when
-				; budget is adjusted via key.{up}/key.{down}).
-				;
-				; -2 finishes the loop. -3 should reset target_tier and update status by
-				; jumping two lines back. 0 *could* repeat the same line, except sometimes
-				; we have to update status, so we jump one back, to set status.
-				; We can't merge the -3 and 0 cases, because setting target_tier over-frequently
-				; makes keystrokes flaky.
-				;
-				; We use a modified jump table when museum_tier is -2, which indicates that
-				; we are synced to the refresh timer. In that case, we abort when the timer is
-				; 59:59 (meaning the refresh just hapenned), and when start is pressed (-2 for
-				; target_tier) we jump back to executing Buy, which will reset museum_tier
-				; (and also do other things, which we don't care about) in that case.
-
-				goto (if (\
-						isopen("museum"), \
-						if (\
-							museum_tier == -2 && {timer} >= 59.00 * 60.00 + 59.0, \
-							start_museum, \
-							s2i (sub (if (museum_tier == -2, "41 5", "47 5"), target_tier + 3, 1), 99)
-						), \
-						end
-					))
-				start_museum:
-
-				; Now that we're in the active part of the script, start turbo. We want
-				; minimal overhead, so don't execute an extra script, just increment
-				; the variable.
-
-				turbo.register += 1
-				upgrade_loop:
-
-				; Go to the next script to perform the actual upgrade.
-				; We run this even when museum_pos is -1, in order to set all the variables
-				; properly. Combine will exit immediately in that case, without a frame break,
-				; so we will fall down below and set the status correctly within the frame
-				; that it starts.
-
-				execute ("{script(Calculate)}")
-
-				; Combine (which gets run from Calculate) will signal us when it's done.
-				; It must be stopped for proper cleanup.
-
-				waituntil (museum_tier == -2)
-				stop ("{script(Combine)}")
-				skip:
-				museum_pos += 1
-
-				; While running, we have fewer conditions to check, since the errors were
-				; already signaled at the top. (There's nothing actually stopping the user
-				; from starting the script anyway, but that's on them at that point.)
-				;
-				; The condition for displaying Combining is reversed, since it's usual
-				; here, and if {start} is pressed it means we should exit.
-
-				museum_status = "</size>museum =<color =#2f4>". \
-				{rounded_budget} . \
-				"</color> <color =#fff>budget</color><br>". \
-				if (\
-					target_tier != -2, \
-					"<color =#ff0>Combining... [". museum_pos . "]<color =#2f4>{start}</color> stops</color>", \
-				"<color =#0df><color =#2f4>{up}</color>/<color =#2f4>{down}</color> changes, <color =#2f4>{start}</color> begins</color>"
-				)
-				stop_turbo:
-
-				; Most of the time, we do not want to stop turbo. We only want to do it in
-				; the specific cases where we'll be ending the loop. So, this duplicates a lot
-				; of the logic in the loop below, all for the benefit of saving a line.
-				;
-				; Note that if we jumped to stop_turbo directly, museum_status can never
-				; contain "Combining".
-
-				executesync (if (\
-						isopen("museum") && museum_pos < 130 && contains (museum_status, "Combining"), \
-						"%%museum-nop%%", \
-						"TE2.2:stop"
-					))
-				; This very complicated gotoif consolidates the ends of lots of loops into
-				; one statement.
-				; If the museum is closed, fall through to exit the script.
-				; If we're through all the positions, or if we're no longer "Combining"
-				;  (which means {start} was pressed), go to the top to reset our state.
-				;
-				; Otherwise, continue the loop: Either normally, or via a shortcut if this
-				; part of the grid is empty, to avoid executing the sub-scripts.
-
-				gotoif (\
-					if (\
-						museum_pos < 130 && contains (museum_status, "Combining"), \
-						if (tier ("loadout", museum_pos) == -1, skip, upgrade_loop), \
-						top
-					), \
-					isopen("museum")
-				)
-				end:
-
-				; Before we exit, blank the status so that there isn't clutter on the screen.
-				; This is safe to do in the last slot because turbo shouldn't be running by
-				; this point. Even if it is, we're the only ones who set museum_status, so
-				; it's still safe.
-
-				museum_status = "</size>"
-			};
-
-		};
-
+"D0S.Factory": {
+	"factory macros": {
+
+		; Infrastructure for producing all the constants in the factory package.
+		; Since this is :imported, it can't produce any instructions.
+
+		#script_name(name) D0S.factory {version}:{name}
+
+		; Key assignments. You can edit these here, or you can edit them later in the
+		; generated script (but you will have more places to modify).
+		#up w
+		#down s
+		#left a
+		#right d
+		#start f
+
+		; Shared hidden variables for the UI
+		#action "<size=0>fa#"
+		#status "fs#"
+
+		; Produces the name of the queue variable for the given tier and item.
+		#queue_str "cq"
+		#queue(tier, item) -1 + 10 * ({item}) + {tier}
+
+		; Raw access to the queue. Not preferred, but better than using "queue"
+		; directly. Use for low-level optimization.
+		#get_raw(raw_item) global.double.get({queue_str} . (100 + {raw_item}))
+		#set_raw(raw_item, value) global.double.set({queue_str} . (100 + {raw_item}), {value})
+
+		; Helper macros for operating on the craft_queue. These should be
+		; used instead of direct access whenever possible.
+		#get_queue(tier, item) {get_raw({queue({tier}, {item})})}
+		#set_queue(tier, item, value) {set_raw({queue({tier}, {item})}, {value})}
+
+		; Increment a value in the queue. Although it expands to the same thing,
+		; it saves a lot of boilerplate in the source and makes it easier to understand
+		; what's going on.
+		#add_queue(tier, item, value) {set_queue({tier}, {item}, {get_queue({tier}, {item})} + {value})}
+		#subtract_queue(tier, item, value) {set_queue({tier}, {item}, {get_queue({tier}, {item})} - ({value}))}
+
+		; Used with factory.composite_string to extract the name from the
+		; returned data.
+		#get_name sub(itemdata, 0, index(itemdata, " ", 0))
+
+		; These macros can only be called *after* factory.composite_string,
+		; i.e. later on in the script.
+		#items_count {lua(return factory.items_count)}
+		#tiers_char sub(itemdata, {lua(return factory.entry_size - 1)}, 1)
+
+		{lua(\
+
+			factory = {};
+			factory.items = {};
+			factory.item_names = {};
+
+			factory.categories = {};
+
+			factory.prods = {};
+			factory.prod_machines = {};
+
+			factory.name_max_size = 0;
+			factory.game_name_sizes = {};
+			factory.game_name_sizes.item = 0;
+			factory.game_name_sizes.craft = 0;
+			factory.game_name_sizes.group = 0;
+			factory.game_name_sizes.special = 0;
+
+			factory.group_map = {};
+			factory.group_map.item = 0;
+			factory.group_map.craft = 1;
+			factory.group_map.group = 2;
+			factory.group_map.special = 2; --[[Intentionally the same]]
+
+			function factory.add_item(name, tiers, game_name, craft_type) {
+
+				local item = {};
+				item.id = #factory.items + 1;
+
+				if (item.id > 89) {
+					return "Too many items: Over the limit while adding " .. name;
+				}
+
+				item.name = name;
+				item.game_name = game_name;
+				item.tier = tiers;
+				item.craft_type = craft_type;
+				factory.items[item.id] = item;
+				factory.item_names[name] = item;
+
+				if (#name > factory.name_max_size) {
+					factory.name_max_size = #name;
+				}
+				if (#game_name > factory.game_name_sizes[craft_type]) {
+					factory.game_name_sizes[craft_type] = #game_name;
+				}
+				return ":const int " .. name .. " " .. #factory.items;
+			}
+
+			function factory.composite_string(var, filter, use_group_info) {
+
+				local acc = {};
+				local size = 0;
+				local first = #factory.items;
+				local last = 0;
+				local group_map = factory.group_map;
+
+				size = if(filter == nil, 1, 2)
+					1. math.max(factory.game_name_sizes["item"], factory.game_name_sizes["craft"]);
+					2. factory.game_name_sizes[filter];
+
+				size = size + 1;
+				local fmt = "%-" .. size .. "s%d";
+				size = size + 1;
+				acc[1] = 'sub("';
+				for (i = 1; i <= #factory.items; i++) {
+					local item = factory.items[i];
+					if (filter == nil || filter == item.craft_type) {
+						acc[#acc + 1] = if (use_group_info, 1, 2)
+							1. string.format(fmt, item.game_name, group_map[item.craft_type]);
+							2. acc[#acc + 1] = string.format(fmt, item.game_name, item.tier - 1);
+
+						if (i < first) {
+							first = i
+						}
+
+						if (i > last) {
+							last = i;
+						}
+					}
+				}
+
+				acc[#acc + 1] = '", ' .. size .. " * (" .. var .. "), " .. size .. ')';
+
+				factory.items_count = last - first + 1;
+				factory.entry_size = size;
+				return table.concat(acc);
+			}
+
+			function factory.add_category(name, ...) {
+
+				local category = {};
+				factory.categories[#factory.categories + 1] = category;
+				category.name = name;
+				local name1, name2, name3 = "default", "first", "last";
+				local arg1, arg2, arg3 = ...;
+
+				for (i = 1; i <= 3; i++) {
+
+					local trimmed = arg1:gsub("^ +", "");
+					local item = factory.item_names[trimmed]
+
+					if (not item) {
+						return "Can't find " .. trimmed;
+					}
+
+					category[name1] = item.id;
+					name1, name2, name3 = name2, name3;
+					arg1, arg2, arg3 = arg2, arg3;
+				}
+			}
+		)}
+
+		; Define a new production item with name "name", craftable from tiers 1-"tiers".
+		; The string passed to produce() is "game_name".
+		; It will take the next available id, starting from 1.
+		#item(name, tiers, game_name) {lua(return factory.add_item("{name}", {tiers}, {game_name}, "item"))}
+
+		; Define a new production item with name "name", craftable from tiers 1-"tiers".
+		; The string passed to craft() is "game_name".
+		; It will take the next available id, starting from 1.
+		#make(name, tiers, game_name) {lua(return factory.add_item("{name}", {tiers}, {game_name}, "craft"))}
+
+		; Define a new item group, i.e. a set of items designed to be scanned in the
+		; crafter. Because items need a valid game_name to be passed to count() in
+		; various places (or else there will be spurious logging), we use "ore".
+		; (The value returned from count() will always be ignored.)
+		#group(name, tiers) {lua(return factory.add_item("{name}", {tiers}, "ore", "group"))}
+
+		; Defines a "special" item. This has a real name, like an item, but acts
+		; like an item-group in other ways. This is used for lumps and ore, which
+		; require special-case handling.
+		#special(name, tiers, game_name) {lua(return factory.add_item("{name}", {tiers}, {game_name}, "special"))}
+
+		; Defines a category grouping for the UI. "First" and "last" are the span of
+		; the group (inclusive), in item names. Must be called *after* the relevant items
+		; are defined.
+		#category(name, default, first, last) {lua(return factory.add_category("{name}", "{default}", "{first}", "{last}"))}
 	};
 
+	"factory constants": {
+		:import factory macros
+
+		#version v3.2.1
+
+		; Everything in the list below is a valid target for automation, and can be
+		; assigned to the "target_type" variable in "lanuch factory craft".
+		; For example, "make(oven, 10, "machine.oven")" indicates that "oven" is a valid
+		; item, usable from tiers 1-10, with the internal game name of "machine.oven"
+		; (which you don't need to worry about.)
+		; Thus you can enter "oven" in the box in the in-game editor (without the quotes).
+
+		; If you add or change this list, mind this constraint:
+		; * All the crafted items have to come before the rest of the items.
+		; * All the item-groups must be in a single block.
+		; * Prefer keeping things in alphabetical order within categories, because
+		;   they are ordered the same way when presented in-game.
+
+		; ===== VALID IDS =====
+
+		; *** To reiterate, just use the name part (i.e. "white_producer"), not the whole thing! ***
+
+		; ----- CRAFTED ITEMS -----
+
+		; Producers, named by building, tiers 1-5
+		{make(arcade_producer, 5, "producer.arcade")}
+		{make(construction_firm_producer, 5, "producer.constructionFirm")}
+		{make(exotic_producer, 1, "producer.exoticgems")}
+		{make(factory_producer, 5, "producer.factory")}
+		{make(gem_producer, 1, "producer.gems")}
+		{make(headquarters_producer, 5, "producer.headquarters")}
+		{make(laboratory_producer, 5, "producer.laboratory")}
+		{make(mine_producer, 5, "producer.mine")}
+		{make(museum_producer, 5, "producer.museum")}
+		{make(powerplant_producer, 5, "producer.powerplant")}
+		{make(pumpkin_producer, 1, "pumpkin.producer")}
+		{make(shipyard_producer, 5, "producer.shipyard")}
+		{make(statue_of_cubos_producer, 5, "producer.statueofcubos")}
+		{make(town_producer, 5, "producer.town")}
+		{make(tradingpost_producer, 5, "producer.tradingpost")}
+		{make(workshop_producer, 5, "producer.workshop")}
+
+		; Boosters, tiers 1-3
+		{make(acceleration_booster, 3, "booster.acceleration")}
+		{make(production_booster, 3, "booster.production.regular")}
+		{make(resource_booster, 3, "booster.resource.drops")}
+
+		{category(prod, town_producer, arcade_producer, resource_booster)}
+
+		; Machines, tiers 1-10
+		{make(assembly, 10, "machine.assembler")}
+		{make(belt, 10, "machine.transportbelt")}
+		{make(boiler, 10, "machine.boiler")}
+		{make(crusher, 10, "machine.crusher")}
+		{make(cutter, 10, "machine.cutter")}
+		{make(mixer, 10, "machine.mixer")}
+		{make(oven, 10, "machine.oven")}
+		{make(presser, 10, "machine.presser")}
+		{make(refiner, 10, "machine.refinery")}
+		{make(shaper, 10, "machine.shaper")}
+
+		{category(mach, belt, assembly, shaper)}
+
+		; Various crafted parts
+		{make(block, 10, "block")}
+		{make(chip, 5, "chip")}
+		{make(hammer, 1, "hammer")}
+		{make(insul_cable, 10, "cable.insulated")}
+		{make(motor, 10, "motor")}
+		{make(pump, 10, "pump")}
+		{make(rainbow_dust, 1, "dust.rainbow")}
+		{make(rubber_sapling, 1, "sapling.rubber")}
+		{make(stacked_plate, 10, "plate.stack")}
+		{make(stacked_pumpkin, 1, "pumpkin.stack")}
+		{make(void_sapling, 1, "sapling.void")}
+
+		{category(crft, chip, block, void_sapling)}
+
+		; Transforms ore into dust, tiers 1-10
+		; Because of an implementation detail, this must come before any
+		; scannable items.
+		; This doesn't show up in any category in the UI.
+		{special(ore, 10, "ore")}
+
+		; ----- SCANNABLE ITEM GROUPS -----
+		; These are not real items, but rather groups of items that will be made together
+		; if you select one of these names. They are meant for use with the Crafter, to
+		; crank out sets of items to scan quickly. You will want to set the quantity to 1000.
+
+		; Notes on using item groups:
+		; * SCAN YOUR ORES FIRST! The factory can and will consume your ore to make stuff,
+		;     and it takes a long time to get 1000 T10 ore.
+		; * The quantity works a little differently than normal items. Instead of making
+		;     1000 items each time, running it again will top off everything to be
+		;     *at* the quantity of 1000 items.
+		; * If you craft a higher tier after a lower tier, it will consume the results
+		;     of the first craft to make the higher tier. Scan all the items first, before
+		;     moving on to the next tier!
+		; * None of these groups include Gem Producers or Exotic Producers. They are too
+		;     expensive in comparison to other things, craft them on your own when you
+		;     judge the time is right.
+
+		; Makes *everything* (expect special producers and lumps) of the given tier.
+		; This is the combination of "chips_and_prods", "machines", and "parts".
+		; Requires x10 and high processing speed to have a hope of completing in a
+		; reasonable amount of time for T5 and T10.
+		; You need Quantum Warehouse to have enough space for this at higher tiers!
+		{group(all, 10)}
+
+		; All the tiers of chips. Warning: Expensive. Input this as tier 1.
+		{group(chips, 1)}
+
+		; Producers + the chip of the corresponding tier. This is everything that
+		; exists in tier range 1-5, for convenience.
+		{group(chip_and_prods, 5)}
+
+		; All machines. Tiers 1-10
+		{group(machines, 10)}
+
+		; All ingredients and parts. Tiers 1-10. Doesn't include ore (scan that before
+		; starting) or lumps (due to technical limitations). Lumps aren't required
+		; for anything currently though.
+		; Includes rubber plates at tier 1 and hammers at tier *2*.
+		; Rubber trees are at tier 9 because of their ore.
+		{group(parts, 10)}
+
+		; All producers, except for special producers. Tiers 1-5
+		{group(producers, 5)}
+
+		{category(grup, all, all, producers)}
+
+		; ----- INGREDIENTS AND PRODUCED PARTS -----
+
+		; Parts, tiers 1-10
+		{item(anti_pumpkin, 1, "pumpkin.anti")}
+		{item(board, 10, "plate.circuit")}
+		{item(cable, 10, "cable")}
+		{item(carved_pumpkin, 1, "pumpkin.carved")}
+		{item(circuit, 10, "circuit")}
+		{item(dense_block, 10, "block.dense")}
+		{item(dense_plate, 10, "plate.dense")}
+		{item(ingot, 10, "ingot")}
+		{item(pipe, 10, "pipe")}
+		{item(plate, 10, "plate")}
+		{item(pumpkin_plate, 1, "pumpkin.plate")}
+		{item(rainbow_ingot, 1, "ingot.rainbow")}
+		{item(rainbow_plate, 1, "plate.rainbow")}
+		{item(ring, 10, "ring")}
+		{item(rod, 10, "rod")}
+		{item(rubber_plate, 1, "plate.rubber")}
+		{item(screw, 10, "screw")}
+		{item(wire, 10, "wire")}
+
+		{category(part, circuit, anti_pumpkin, wire)}
+
+		;Tries to make dust from ores and lower-tier dusts, tiers 1-10
+		; Doesn't appear in the UI
+		{item(dust, 10, "dust")}
+
+		; Tiers up dust, tiers 1-9
+		; These are ore lumps, plus putting them into the mixer.
+		; There is no "only make ore lumps, without mixing them" option right now.
+		; Doesn't appear in the UI
+		{special(lump, 9, "lump")}
+
+		; Can only be made from saplings
+		; Doesn't appear in the UI
+		{item(void_essence, 1, "essence.void")}
+
+		; Can only be gotten through the Halloween event
+		; Doesn't appear in the UI
+		{item(pumpkin, 1, "pumpkin")}
+
+		; Rubber, tier 1 only
+		; Doesn't appear in the UI
+		{item(rubber, 1, "rubber")}
+
+		; ===== END OF VALID IDS =====
+	};
+
+	"worker_storage_lib": {
+		; This library will find a slot in the pool of workers to use as "permanent storage".
+		; If one doesn't already exist with the given tag, a new one will be allocated,
+		; *but* it will avoid overwriting other worker names using the same sytem of tags
+		; for storage. Thus, scripts can use this to cooperate without having to
+		; explicitly assign worker slot numbers.
+		;
+		; The scheme is that a name will be prefixed with "[TOKEN]", where "TOKEN" is
+		; some short, unique word that will identify the script in question. For instance,
+		; the factory might use the word "factory".
+		;
+		; This library does not actually store anything in the worker name. Instead, it
+		; sets the variable "worker_slot", which you must declare in your code.
+		; If worker_slot < 100, then it found a valid slot with the worker_prefix.
+		; If 100 <= worker_slot < 200, then there was no existing slot, but new data
+		; can be initialized at (worker_slot - 100). If worker_slot == 200, then there
+		; are no available slots at all, and you should show an error message or take
+		; approriate action.
+		;
+		; A complete example looks like this (replace angle brackets with curlies):
+		;
+		; :local int worker_slot
+		; <worker_lib_line_1([TOKEN])>
+		; <worker_lib_line_2>
+
+		; =================================================================================
+
+		#worker_prefix {lua(return worker_lib_prefix)}
+		#worker_lacks_prefix sub(worker.name(worker_slot), 0, {len({worker_prefix})}) != "{worker_prefix}"
+
+		; The first macro, which defines the first line and the loop variable that we
+		; jump to. We also store the worker_prefix with Lua, so that we don't need to
+		; repeat it on the 2nd macro.
+		; We don't want to skip slot 0. Doing it like this saves a line.
+		#worker_lib_line_1(worker_prefix_arg) {lua(\
+			worker_lib_prefix = "{worker_prefix_arg}"\
+		)}find_worker_slot_loop: worker_slot = worker_slot + if({worker_lacks_prefix}, 1, 0)
+
+		; The second macro, which iterates until we're done.
+		; The test against worker.group() checks for non-existant workers. They would
+		; otherwise show as acceptable candidates, and we need to keep iterating to 200
+		; in that case.
+		#worker_lib_line_2 gotoif(find_worker_slot_loop, \
+			worker_slot < 100 && {worker_lacks_prefix} \
+			|| worker_slot >= 100 && worker_slot < 200 && (worker.group(worker_slot - 100) == -1 \
+			|| contains(sub(worker.name(worker_slot - 100), 0, 1), "["))\
+		)
+	};
+
+	"recipes": {
+		:import factory constants
+
+		{lua(factory.recipes = {})}
+
+		; Infrastructure for defining the recipe list.
+		{lua(\
+
+			function factory.recipe(item) {
+				local recipe_item = factory.item_names[item];
+				if (not recipe_item) {
+					return "Unknown item '" .. item .. "'";
+				}
+				if (recipe_item.recipes) {
+					return "Duplicate recipe for '" .. item .. "'";
+				}
+
+				factory.recipe_item = recipe_item;
+				local offset = 10 * recipe_item.id;
+
+				/*
+				There are two types of recipe list that we store
+					-"forward" list stored on the item.
+						This records what items are needed for crafting
+					-"reverse" list stored on the main factory object.
+						This is indexed by queue id and records what items can be *made from* the item.
+				The forward list is used by the item group system
+				The reverse list is used by the recipe system proper.
+				*\
+
+				for (i = offset; i < offset + recipe_item.tier; i++) {
+					if (not factory.recipes[i]) {
+						factory.recipes[i] = {};
+					}
+				}
+				recipe_item.recipes = {};
+				for (i = 1; i <= recipe_item.tier; i++) {
+					recipe_item.recipes[i] = {};
+				}
+			}
+
+			function factory.component(tiers, item_name, counts) {
+				local recipe_item = factory.recipe_item;
+				if (not recipe_item) {
+					return "Tried to define a component before calling recipe!";
+				}
+				local item_name = item_name:gsub(" ", "");
+				local item = factory.item_names[item_name];
+				if (not item) {
+					return "Unknown item '" .. item_name .. "'";
+				}
+				if (item.craft_type == "group") {
+					return string.format(\
+						[[Cannot add item "%s" because it is a group]], \
+						item.name, \
+						recipe_item.name, \
+						recipe_item.craft_type\
+					);
+				}
+				local tier_tmp = {};
+				for (word in tiers:gmatch("%S+")) {
+					local tier = tonumber(word);
+					if (not tier) {
+						return "Bad tier " .. word;
+					}
+					tier_tmp[#tier_tmp + 1] = tier;
+				}
+				if (#tier_tmp != 1 && #tier_tmp != recipe_item.tier) {
+					return "Tiers list has wrong size, item " .. recipe_item.name .. " has " .. recipe_item.tier .. " tiers";
+				}
+				
+				local base_tier;
+				for (i = 1; i <= recipe_item.tier; i ++) {
+					base_tier = tier_tmp[i] or base_tier;
+					local tier = base_tier;
+					if (tier < 1) {
+						tier = tier + i;
+					}
+					tier_tmp[i] = tier;
+				}
+
+				local counts_tmp = {};
+				for (word in counts:gmatch("%S+")) {
+					local count = tonumber(word);
+					if (not count) {
+						return "Bad count " .. word;
+					}
+					counts_tmp[#counts_tmp + 1] = count;
+				}
+				if (#counts_tmp != 1 && #counts_tmp != recipe_item.tier) {
+					return "Counts list has wrong size, item " .. recipe_item.name .. " has " .. recipe_item.tier .. " tiers";
+				}
+				for (i = #counts_tmp + 1; i <= recipe_item.tier; i ++) {
+					counts_tmp[i] = counts_tmp[i-1];
+				}
+
+				/*
+					Finally, merge the two expanded lists;
+					Distribute the results across the recipes for each tier.
+					These recipes are "reversed, " so the AI does not have to remake items
+					It's this reversed list that is needed for computing the materials needed when crafting.
+				*/
+
+				local recipes = factory.recipes;
+				local offset = recipe_item.id * 10 - 1;
+				for (i = 1; i <= recipe_item.tier; i ++) {
+
+					local tier = tier_tmp[i];
+					local count = counts_tmp[i];
+
+					if (count > 0 && tier > 0) {
+					/*
+						Tiers less than 1 can happen naturally, due to the negative tier convention, so they are silently dropped. 
+						Tiers greater than the the maximum number of tiers are an error.
+					*/
+
+					if (tier > item.tier) {
+						return "Tier " .. tier .. " > item max tier " .. item.tier;
+					}
+
+					local idx = item.id * 10 + tier - 1;
+					local comp = recipes[idx];
+					if comp == nil {
+						comp = {};
+						recipes[idx] = comp;
+					}
+					
+					comp[#comp + 1] = offset + i;
+					comp[#comp + 1] = count;
+					local item_recipe = recipe_item.recipes[i];
+					item_recipe[#item_recipe + 1] = idx;
+					item_recipe[#item_recipe + 1] = count;
+				}
+			}
+
+			function factory.produce(item, source, mult, machine) {
+
+				local recipe_item = factory.item_names[item];
+
+				if (not recipe_item) {
+					return "Unknown item '" .. item .. "'";
+				}
+				if (recipe_item.recipes) {
+					return "Duplicate recipe for '" .. item .. "'";
+				}
+
+				local source_item = factory.item_names[source];
+				if (not source_item) {
+					return "Unknown item '" .. source .. "'";
+				}
+				if (source_item.tier != recipe_item.tier) {
+					return "Tier mismatch: " .. source .. "(" .. source_item.tier ..") vs " .. item .. "(" .. recipe_item.tier .. ")"\
+				}
+
+				if (#factory.prods == 0 || factory.prods[#factory.prods].machine != machine) {
+
+					if (factory.prod_machines[machine]) {
+						return "Found 2nd group for machine '" .. machine .. "'";
+					}
+					factory.prod_machines[machine] = #factory.prods + 1;
+					factory.prod_machines[#factory.prod_machines + 1] = machine;
+				}
+				local prod = {};
+				prod.item = recipe_item;
+				prod.source = source_item;
+				prod.mult = mult;
+				prod.machine = machine;
+				factory.prods[#factory.prods + 1] = prod;
+
+				local offset = 10 * source_item.id;
+				local count = 1 / mult;
+				for (i = offset; i < offset + recipe_item.tier; i ++) {
+
+					if (not factory.recipes[i]) {
+						factory.recipes[i] = {};
+					}
+					local recipe = factory.recipes[i];
+					recipe[#recipe + 1] = 10 * recipe_item.id - offset + i;
+					recipe[#recipe + 1] = count;
+				}
+				recipe_item.recipes = {};
+				for (i = 1; i <= recipe_item.tier; i ++) do\
+					local recipe = {};
+					recipe[1] = offset + i - 1;
+					recipe[2] = count;
+					recipe_item.recipes[i] = recipe;
+				end\
+			}
+
+			function factory.check_recipes() {
+				for (i = 1; i <= #factory.items; i ++) {
+					local item = factory.items[i];
+					if (not item.recipes) {
+						return item.name .. "(" .. item.id .. ") has no assigned recipe!";
+					}
+				}
+			}
+		)}
+
+		; Every recipe begins with this line. There must be one (and only one)
+		; recipe declaration for each item, even if there is no way to make it
+		; (like for rubber).
+		#recipe(item) {lua(return factory.recipe([[{item}]]))}
+
+		; After starting a recipe, list its components with this. A component
+		; declares a single item that is used, and the the tiers and counts of that
+		; item for each tier of the recipe_item that's being made.
+		; The list on the left side is the tiers, the list on the right is the counts.
+		;
+		; For instance:
+		;  recipe(white_producer)
+		;  component(2 3 5 7 9, screw, 2 4 4 4 4)
+		; Means that a T1 white_producer needs 2 T2 screws, a T2 white_producer needs
+		; 4 T3 screws, T3 requires 4 T5 screws, etc.
+		; 
+		; There are additional space-saving wrinkles. Instead of repeating a number
+		; for every tier or every count when it's always the same, you can list it
+		; once. This is all-or-nothing: It must be exactly once, or listed once for
+		; every tier in the recipe.
+		; Also, in the tier list you can use numbers less than 1. This means that
+		; the position in the list will be added to the number. I.e. a value of
+		; 0 becomes equal to "current_tier", -1 becomes "current_tier - 1", etc.
+		#component(tiers, item, counts) {lua(\
+		return factory.component([[{tiers}]], [[{item}]], [[{counts}]]);
+		)}
+
+		; For items that are made in machines, use this macro instead. This defines
+		; the needed recipe automatically. The third argument is the "multiplier",
+		; which says how many multiples of the item are made from a single source
+		; input.
+		; It is assumed that the production happens for all tiers of the item,
+		; from the same source tier; things like mixing or boiling dust aren't handled
+		; through this system. (Boiling isn't handled at all.)
+		#produce(item, source, mult, machine) {lua(\
+		return factory.produce(\
+			[[{item}]], \
+			string.gsub([[{source}]], " ", ""), \
+			{mult}, \
+			string.gsub([[{machine}]], " ", "")\
+		);
+		)}
+
+		; ===== BEGIN RECIPES =====
+
+		{recipe(town_producer)}
+		{component(2 3 5 7 9, screw, 2 4 4 4 4)}
+		{component(2 0 0 0 0, plate, 2 0 0 0 0)}
+		{component(0 3 5 7 9, board, 0 2 2 2 6)}
+		{component(-1, chip, 0 2 2 2 4)}
+		{component(-1, town_producer, 1)}
+
+		{recipe(factory_producer)}
+		{component(1 3 5 7 9, wire, 1 4 4 4 4)}
+		{component(2 0 0 0 0, screw, 1 0 0 0 0)}
+		{component(0 3 5 7 9, board, 0 1 1 1 3)}
+		{component(2 3 5 0 0, plate, 2 2 2 0 0)}
+		{component(0 0 0 7 9, dense_plate, 0 0 0 2 4)}
+		{component(1 1 2 3 4, chip, 2 1 1 1 3)}
+		{component(-1, factory_producer, 1)}
+
+		{recipe(mine_producer)}
+		{component(2 3 5 7 9, screw, 2 2 2 4 4)}
+		{component(1 2 4 6 8, wire, 2 3 2 5 5)}
+		{component(2 0 5 7 9, plate, 1 0 1 2 2)}
+		{component(0 3 5 7 9, dense_plate, 0 2 2 2 2)}
+		{component(1 1 2 3 4, chip, 1)}
+		{component(-1, mine_producer, 1)}
+
+		{recipe(workshop_producer)}
+		{component(0 2 4 6 8, wire, 0 4 2 8 8)}
+		{component(1 3 5 7 9, wire, 4 2 2 2 2)}
+		{component(2 3 5 7 9, plate, 1 2 2 2 2)}
+		{component(1 0 2 3 4, chip, 1 0 2 2 2)}
+		{component(-1, workshop_producer, 1)}
+
+		{recipe(construction_firm_producer)}
+		{component(2 4 6 8 10, rod, 3 4 10 10 10)}
+		{component(2 4 6 8 10, plate, 2)}
+		{component(1 1 2 3 4, chip, 1 2 2 2 2)}
+		{component(-1, construction_firm_producer, 1)}
+
+		{recipe(laboratory_producer)}
+		{component(0 3 5 7 9, pipe, 0 3 5 10 14)}
+		{component(2 4 6 8 10, motor, 1)}
+		{component(1 3 5 7 9, dense_plate, 2 2 4 4 6)}
+		{component(0, chip, 3 2 4 4 6)}
+		{component(-1, laboratory_producer, 1)}
+
+		{recipe(headquarters_producer)}
+		{component(1 3 5 7 9, wire, 2 4 8 8 12)}
+		{component(2 4 6 8 10, motor, 1 2 2 2 2)}
+		{component(0, chip, 3 2 4 4 6)}
+		{component(-1, headquarters_producer, 1)}
+
+		{recipe(powerplant_producer)}
+		{component(1 3 5 7 9, insul_cable, 2 2 4 4 6)}
+		{component(2 4 6 8 10, motor, 1)}
+		{component(0 3 5 7 9, block, 0 3 5 5 14)}
+		{component(0, chip, 3 2 4 4 6)}
+		{component(-1, powerplant_producer, 1)}
+
+		{recipe(arcade_producer)}
+		{component(2 4 6 8 9, insul_cable, 4 6 6 6 6)}
+		{component(2 4 6 8 10, pipe, 4 4 4 4 8)}
+		{component(0, chip, 4 4 4 4 6)}
+		{component(-1, arcade_producer, 1)}
+
+		{recipe(tradingpost_producer)}
+		{component(2 4 6 8 10, ring, 6 8 8 8 12)}
+		{component(2 4 6 8 10, plate, 4)}
+		{component(0, chip, 2 2 2 2 4)}
+		{component(-1, tradingpost_producer, 1)}
+
+		{recipe(shipyard_producer)}
+		{component(2 4 6 8 10, insul_cable, 6 8 8 8 12)}
+		{component(1 3 5 7 9, block, 4)}
+		{component(0, chip, 2 2 2 2 4)}
+		{component(-1, shipyard_producer, 1)}
+
+		{recipe(museum_producer)}
+		{component(3 5 7 9 10, insul_cable, 6 7 7 7 9)}
+		{component(2 4 6 8 10, block, 4 5 5 5 7)}
+		{component(0, chip, 2 2 2 2 4)}
+		{component(-1, museum_producer, 1)}
+
+		{recipe(statue_of_cubos_producer)}
+		{component(1 3 5 7 9, dense_block, 4 5 5 5 7)}
+		{component(2 4 6 8 10, motor, 2)}
+		{component(2 4 6 8 10, pipe, 2)}
+		{component(2 4 6 8 10, pump, 2 3 3 3 5)}
+		{component(0, chip, 2 2 2 2 4)}
+		{component(-1, statue_of_cubos_producer, 1)}
+
+		{recipe(gem_producer)}
+		{component(5, chip, 10)}
+		{component(4, chip, 10)}
+		{component(10, insul_cable, 2)}
+		{component(1, dense_block, 1)}
+		{component(2, dense_block, 1)}
+		{component(3, dense_block, 1)}
+		{component(4, dense_block, 1)}
+		{component(5, dense_block, 1)}
+		{component(6, dense_block, 1)}
+		{component(7, dense_block, 1)}
+		{component(8, dense_block, 1)}
+		{component(9, dense_block, 1)}
+		{component(10, dense_block, 1)}
+
+		{recipe(exotic_producer)}
+		{component(5, chip, 10)}
+		{component(10, insul_cable, 2)}
+		{component(10, dense_block, 10)}
+		{component(10, assembly, 1)}
+		{component(10, boiler, 1)}
+		{component(10, crusher, 1)}
+		{component(10, cutter, 1)}
+		{component(10, mixer, 1)}
+		{component(10, oven, 1)}
+		{component(10, presser, 1)}
+		{component(10, refiner, 1)}
+		{component(10, shaper, 1)}
+		{component(10, belt, 1)}
+
+		{recipe(acceleration_booster)}
+		{component(2 3 5, chip, 1 4 6)}
+		{component(4, plate, 4 0 0)}
+		{component(1, rainbow_plate, 0 2 4)}
+		{component(4 8 0, circuit, 4 8 0)}
+		{component(10, dense_block, 0 0 12)}
+		{component(1, void_essence, 0 0 4)}
+		{component(-1, acceleration_booster, 2)}
+
+		{recipe(production_booster)}
+		{component(1 3 0, chip, 4 4 0)}
+		{component(2 7 0, plate, 4 6 0)}
+		{component(2 7 10, circuit, 1 4 4)}
+		{component(10, dense_block, 0 0 12)}
+		{component(1, void_essence, 0 0 4)}
+		{component(-1, production_booster, 0 1 4)}
+
+		{recipe(resource_booster)}
+		{component(3, plate, 6 0 0)}
+		{component(1, rainbow_plate, 0 0 2)}
+		{component(1 3 4, chip, 2 2 6)}
+		{component(4 8 0, circuit, 1 2 0)}
+		{component(0 7 10, block, 0 4 4)}
+		{component(1, void_essence, 0 0 1)}
+		{component(-1, resource_booster, 0 1 2)}
+
+		{recipe(pumpkin_producer)}
+		{component(0, carved_pumpkin, 6)}
+		{component(0, anti_pumpkin, 6)}
+		{component(0, pumpkin_plate, 20)}
+
+		{recipe(oven)}
+		{component(0, plate, 4 6 8 8 8 8 8 8 8 8)}
+		{component(0, insul_cable, 2 2 3 3 3 4 4 4 4 4)}
+		{component(0, block, 0 0 0 0 0 2 2 2 2 2)}
+		{component(-1, oven, 1)}
+
+		{recipe(presser)}
+		{component(1, hammer, 2 0 0 0 0 0 0 0 0 0)}
+		{component(0, plate, 4 5 7 7 7 9 9 9 9 9)}
+		{component(0, wire, 1 1 2 2 2 3 3 3 3 3)}
+		{component(0, block, 0 0 0 0 4 5 5 5 5 5)}
+		{component(1 1 1 2 2 2 3 3 4 4, chip, 2)}
+		{component(-1, presser, 1)}
+
+		{recipe(assembly)}
+		{component(0, pipe, 1 1 1 1 1 2 2 2 2 2)}
+		{component(0, dense_plate, 6 5 8 8 8 10 10 10 12 12)}
+		{component(0, motor, 1 1 1 1 1 1 1 1 2 2)}
+		{component(1 1 1 2 2 2 3 3 4 4, chip, 1 1 1 1 1 1 1 1 1 2)}
+		{component(-1, assembly, 1)}
+
+		{recipe(refiner)}
+		{component(0, block, 0 0 0 0 0 0 5 5 5 7)}
+		{component(0, dense_plate, 4)}
+		{component(0, motor, 1 1 1 1 2 2 2 2 2 4)}
+		{component(0, ring, 1 2 2 2 3 3 3 3 3 5)}
+		{component(0, pump, 1 2 2 2 3 3 3 3 3 5)}
+		{component(1 1 2 2 2 2 3 4 4 5, chip, 2)}
+		{component(-1, refiner, 1)}
+
+		{recipe(mixer)}
+		{component(0, dense_plate, 5 4 4 5 5 6 6 6 6 6)}
+		{component(0, motor, 2)}
+		{component(0, pump, 1 1 1 2 2 3 3 3 3 3)}
+		{component(1 1 1 2 2 2 2 3 4 4, chip, 1 1 1 2 2 3 3 3 3 3)}
+		{component(-1, mixer, 1)}
+
+		{recipe(crusher)}
+		{component(0, dense_plate, 7 8 8 8 8 8 8 9 9 9)}
+		{component(0, motor, 1 1 1 1 1 1 1 2 2 2)}
+		{component(1 1 1 2 2 2 2 2 4 4, chip, 1 2 2 2 2 2 2 3 3 3)}
+		{component(-1, crusher, 1)}
+
+		{recipe(belt)}
+		{component(1, rubber, 3 4 4 4 4 0 0 0 0 0)}
+		{component(1, rubber_plate, 0 0 0 0 0 4 5 5 5 5)}
+		{component(0, motor, 3 3 3 3 3 3 4 4 4 4)}
+		{component(0, insul_cable, 3 4 4 4 4 4 5 5 5 5)}
+		{component(0 0 0 1 2 2 3 3 4 4, chip, 0 0 0 4 4 4 5 5 5 5)}
+		{component(-1, belt, 1)}
+
+		{recipe(cutter)}
+		{component(0, plate, 2 2 2 2 2 2 2 0 0 0)}
+		{component(0, dense_plate, 3 3 3 3 3 4 4 2 2 2)}
+		{component(0, block, 0 0 0 0 0 0 0 4 4 6)}
+		{component(0, motor, 3 4 4 4 4 5 5 5 5 7)}
+		{component(-1, cutter, 1)}
+
+		{recipe(shaper)}
+		{component(0, plate, 4 4 4 4 4 4 4 4 4 0)}
+		{component(0, dense_plate, 0 0 0 0 0 0 0 0 0 4)}
+		{component(0, screw, 1 2 2 2 2 3 3 3 3 3)}
+		{component(0, block, 1 2 2 2 2 3 3 3 3 0)}
+		{component(0, dense_block, 0 0 0 0 0 0 0 0 0 5)}
+		{component(0, motor, 2)}
+		{component(0, insul_cable, 1 1 1 1 1 2 2 2 2 4)}
+		{component(-1, shaper, 1)}
+
+		{recipe(boiler)}
+		{component(0, wire, 2 2 2 3 3 3 3 3 4 5)}
+		{component(0, dense_plate, 2 2 2 3 3 3 3 3 4 5)}
+		{component(0, block, 4 7 7 8 8 8 8 8 9 10)}
+		{component(0, motor, 1 1 1 2 2 2 2 2 3 4)}
+		{component(0, screw, 2)}
+		{component(0, pump, 1)}
+		{component(-1, boiler, 1)}
+
+		{recipe(rainbow_dust)}
+		{component(1, dust, 1)}
+		{component(2, dust, 1)}
+		{component(3, dust, 1)}
+		{component(4, dust, 1)}
+		{component(5, dust, 1)}
+		{component(6, dust, 1)}
+		{component(7, dust, 1)}
+		{component(8, dust, 1)}
+		{component(9, dust, 1)}
+		{component(10, dust, 1)}
+
+		{recipe(chip)}
+		{component(1 3 5 7 9, circuit, 2)}
+		{component(2 4 6 8 10, circuit, 2 4 4 2 2)}
+		{component(1 3 5 7 9, board, 1 4 4 6 8)}
+		{component(2 4 6 8 10, board, 1 2 2 6 8)}
+		{component(-1, chip, 0 4 8 12 12)}
+
+		{recipe(insul_cable)}
+		{component(0, cable, 1 1 1 2 3 4 5 10 12 16)}
+		{component(1, rubber, 1 2 0 0 0 0 0 0 0 0)}
+		{component(1, rubber_plate, 0 0 2 4 6 8 10 10 12 16)}
+
+		{recipe(stacked_plate)}
+		{component(0, plate, 9)}
+
+		{recipe(stacked_pumpkin)}
+		{component(0, pumpkin, 9)}
+
+		{recipe(motor)}
+		{component(0, plate, 4)}
+		{component(0, screw, 1)}
+		{component(0, rod, 2)}
+		{component(0, wire, 1)}
+		{component(1, rubber, 1)}
+
+		{recipe(pump)}
+		{component(0, plate, 2)}
+		{component(0, motor, 1)}
+		{component(0, ring, 2)}
+		{component(1, rubber_plate, 4)}
+
+		{recipe(hammer)}
+		{component(2, ingot, 6)}
+		{component(2, rod, 1)}
+
+		{recipe(block)}
+		{component(0, dense_plate, 8 8 8 8 8 8 12 12 12 12)}
+
+		{recipe(rubber_sapling)}
+		{component(0, rubber, 8)}
+		{component(9, ore, 1)}
+
+		{recipe(void_sapling)}
+		{component(1, rainbow_dust, 8)}
+		{component(1, rubber_sapling, 1)}
+
+		{recipe(producers)}
+		#recipe_producers(x) \
+		{component(0, town_producer, {x})}\
+		{component(0, factory_producer, {x})}\
+		{component(0, mine_producer, {x})}\
+		{component(0, workshop_producer, {x})}\
+		{component(0, construction_firm_producer, {x})}\
+		{component(0, laboratory_producer, {x})}\
+		{component(0, headquarters_producer, {x})}\
+		{component(0, powerplant_producer, {x})}\
+		{component(0, arcade_producer, {x})}\
+		{component(0, tradingpost_producer, {x})}\
+		{component(0, shipyard_producer, {x})}\
+		{component(0, museum_producer, {x})}\
+		{component(0, statue_of_cubos_producer, {x})}
+		{recipe_producers(1)}
+
+		{recipe(machines)}
+		{component(0, oven, 1)}
+		{component(0, presser, 1)}
+		{component(0, assembly, 1)}
+		{component(0, refiner, 1)}
+		{component(0, mixer, 1)}
+		{component(0, crusher, 1)}
+		{component(0, belt, 1)}
+		{component(0, cutter, 1)}
+		{component(0, shaper, 1)}
+		{component(0, boiler, 1)}
+
+		{recipe(parts)}
+		#recipe_parts \
+		{component(0, insul_cable, 1)}\
+		{component(0, stacked_plate, 1)}\
+		{component(0, motor, 1)}\
+		{component(0, pump, 1)}\
+		{component(1, hammer, 0 1 0 0 0 0 0 0 0 0)}\
+		{component(0, block, 1)}\
+		{component(0, ingot, 1)}\
+		{component(0, plate, 1)}\
+		{component(0, dense_plate, 1)}\
+		{component(0, dense_block, 1)}\
+		{component(0, pipe, 1)}\
+		{component(0, cable, 1)}\
+		{component(0, wire, 1)}\
+		{component(0, rod, 1)}\
+		{component(0, ring, 1)}\
+		{component(0, screw, 1)}\
+		{component(0, board, 1)}\
+		{component(0, circuit, 1)}\
+		{component(0, rubber_plate, 1 0 0 0 0 0 0 0 0 0)}\
+		{component(1, rubber_sapling, 0 0 0 0 0 0 0 0 1 0)}
+		{recipe_parts}
+
+		{recipe(chips)}
+		{component(1, chip, 1)}
+		{component(2, chip, 1)}
+		{component(3, chip, 1)}
+		{component(4, chip, 1)}
+		{component(5, chip, 1)}
+
+		{recipe(chip_and_prods)}
+		{component(0, chip, 1)}
+		{recipe_producers(1)}
+
+		#recipe_machines_and_parts \
+		{component(0, oven, 1)}\
+		{component(1, presser, 0 1 0 0 0 0 0 0 0 0)}\
+		{component(0, presser, 0 1 1 1 1 1 1 1 1 1)}\
+		{component(0, assembly, 1)}\
+		{component(0, refiner, 1)}\
+		{component(0, mixer, 1)}\
+		{component(0, crusher, 1)}\
+		{component(0, belt, 1)}\
+		{component(0, cutter, 1)}\
+		{component(0, shaper, 1)}\
+		{component(0, boiler, 1)}\
+		{recipe_parts}
+
+		{recipe(all)}
+		{component(0, chip, 1 1 1 1 1 0 0 0 0 0)}
+		{recipe_producers(1 1 1 1 1 0 0 0 0 0)}
+		{recipe_machines_and_parts}
+
+		; Machine-produced items
+		{recipe(ingot)} ; Has special-case producing code
+		{component(0, dust, 1)}
+
+		{produce(rainbow_ingot, rainbow_dust, 1, oven)}
+
+		{produce(plate, ingot, 1, presser)}
+		{produce(rainbow_plate, rainbow_ingot, 1, presser)}
+		{produce(dense_plate, stacked_plate, 1, presser)}
+		{produce(rubber_plate, rubber, 1, presser)}
+		{produce(pumpkin_plate, stacked_pumpkin, 1, presser)}
+
+		{produce(dense_block, block, 1, boiler)}
+		{produce(anti_pumpkin, pumpkin, 1, boiler)}
+
+		{produce(rod, ingot, 2, shaper)}
+		{produce(pipe, plate, 1, shaper)}
+		{produce(ring, rod, 1, shaper)}
+
+		{produce(cable, ingot, 2, refinery)}
+		{produce(board, plate, 1, refinery)}
+		{produce(wire, cable, 1, refinery)}
+
+		{produce(screw, rod, 4, cutter)}
+		{produce(carved_pumpkin, pumpkin, 1, cutter)}
+
+		{produce(circuit, cable, 1, assembler)}
+
+		; These recipes have special-case code to handle them, because of the
+		; complexities involved with choosing between ore and lumps for making dust.
+		{recipe(lump)}
+		{recipe(dust)}
+
+		; Terminal items, unable to be crafted.
+		{recipe(ore)}
+		{recipe(rubber)}
+		{recipe(void_essence)}
+		{recipe(pumpkin)}
+
+		; ===== END RECIPES =====
+
+		{lua(return factory.check_recipes())}
+	};
+	"run_recipes": {
+		:import factory constants
+		:import recipes
+
+		:name {script_name(produce)}
+
+		:local int i
+		:local int machine_idx
+		:local double previous_amount
+		:local string machine_chunk
+		:local string machine_name
+		:local string produce_data
+		:local string source_name_raw
+
+		key.{left}()
+		key.{right}()
+
+		isopen("factory")
+
+		; If we were launched via key impulse, invoke the UI immediately to start turbo,
+		; and set action to signal which key was pressed. Otherwise, we're being called
+		; as a produce script.
+		execute(if(contains(impulse(), "key."), "{script_name(ui)}", "###badname###"))
+		gotoif(end, contains(impulse(), "key."))
+
+		; ================== BEGIN MACROS + LUA ==================
+		; The data for producing is defined in a single string, stored in
+		; produce_data. Each entry in the string is a "produce_chunk", defined
+		; in the following format:
+		; MULT SOURCE_CHAR DEST_ITEM
+		; DEST_ITEM is a 3-byte number, denoting the raw queue value for the item.
+		; (I.e. after the +100 addition.) SOURCE_CHAR is a single character that
+		; is used for indexing a separate lookup table of the source item names.
+		; (The source tier will be the same as the tier of DEST_ITEM.) The MULT
+		; is a single number used when items produce multiple output copies.
+		#produce_chunk_size 5
+
+		; Here we precompute all our data tables. There are three tables:
+		; produce_data, which stores the produce chunks described above.
+		; item_names, which stores destination item names only, and
+		; machine_data, which stores a combination of machine name and offset into produce_data.
+		;
+		; We also compute the character lookup table that is used to convert DEST_ITEM to/from
+		; numbers for use with item_names.
+		{lua(\
+		local format = string.format\
+		\
+		machine_chunk_size = nil\
+		machine_data = nil\
+		item_names = nil\
+		item_names_size = nil\
+		trans_table = "0123456789abcdefghijklmnopqrstuvwxyz"\
+		produce_data = nil\
+		\
+		local function pad_strings(arr)\
+			local max = 0\
+			for i = 1, #arr do\
+				max = max >= #arr[i] and max or #arr[i]\
+			end\
+			max = max + 1\
+			local fmt_str = format("%%%ds", -max)\
+			local res = {}\
+			for i = 1, #arr do\
+				res[i] = format(fmt_str, arr[i])\
+			end\
+			return res, max\
+		end\
+		\
+		local machine_acc = {}\
+		local item_acc = {}\
+		local prod_acc = {}\
+		local prods_offset = 1\
+		local offsets = {}\
+		factory.prod_machines[#factory.prod_machines + 1] = "end"\
+		factory.prod_machines["end"] = #factory.prods + 1\
+		for i = 1, #factory.prod_machines do\
+			local machine = factory.prod_machines[i]\
+			machine_acc[i] = machine\
+			local next_offset = factory.prod_machines[machine]\
+			for j = 1, 10 do\
+				for k = prods_offset, next_offset - 1 do\
+				local prod = factory.prods[k]\
+				if prod.source.tier < j then goto continue end\
+				local source_name = prod.source.game_name\
+				if not item_acc[source_name] then\
+					item_acc[#item_acc + 1] = source_name\
+					item_acc[source_name] = #item_acc\
+				end\
+				prod_acc[#prod_acc + 1] = prod.mult ..\
+					string.sub(trans_table, item_acc[source_name], item_acc[source_name]) ..\
+					prod.item.id * 10 + 100 + j - 1\
+				::continue::\
+				end\
+			end\
+			offsets[i] = format("%03d", #prod_acc * 5)\
+			prods_offset = next_offset\
+		end\
+		if #prod_acc * 5 > 999 then\
+			return "Offset overflows three digits: " .. table.concat(offsets, " ")\
+		end\
+		machine_acc, machine_chunk_size = pad_strings(machine_acc)\
+		for i = 1, #machine_acc do\
+			machine_acc[i] = offsets[i] .. machine_acc[i]\
+		end\
+		\
+		machine_data = table.concat(machine_acc)\
+		machine_chunk_size = machine_chunk_size + 3\
+		item_acc, item_names_size = pad_strings(item_acc)\
+		item_names = table.concat(item_acc)\
+		trans_table = string.sub(trans_table, 1, #item_acc)\
+		produce_data = table.concat(prod_acc)\
+		\
+		--[[Debug functions, uncomment as needed]]\
+		--[[return table.concat(prod_acc, ", ")]]\
+		)}
+
+		;{lua(return produce_data)}_
+		;{lua(return machine_data)}
+		;{lua(return item_names)}
+		;{lua(return trans_table)}_
+
+		; When it is loaded from produce_data, the value in produce_data is
+		; processed from the raw produce_chunk to lookup the SOURCE_CHAR from the
+		; secondary lookup table. This still needs extra processing to trim the
+		; trailing spaces, which is why the source_name macro exists.
+		#dest_offset 2
+		#source_char_offset 1
+		#mult_offset 0
+		#get_source_tier index(" 0123456789", sub(produce_data, {dest_offset} + 2, 1), 0)
+		#source_name sub(source_name_raw, 0, index(source_name_raw, " ", 0))
+		#mult s2d(sub(produce_data, {mult_offset}, 1), 0.)
+
+		#next_offset s2i(sub(machine_chunk, {lua(return machine_chunk_size)}, 3), 0)
+
+		; Raw access to the queue. This is even more direct than
+		; get_raw, because we're using queue strings directly.
+		#raw_dest sub(produce_data, {dest_offset}, 3)
+		#get_dest global.double.get({queue_str} . {raw_dest})
+		#set_dest(value) global.double.set({queue_str} . {raw_dest}, {value})
+		; ================== END MACROS + LUA ==================
+
+		executesync("{script_name(produce dust)}")
+		stop("{script_name(produce dust)}")
+
+		machine_loop:
+		; Setup machine data variables and set the produce index to the proper place.
+		; We break this out into separate variables because we don't run through this
+		; section as much (only once per machine, so ~8 times), and it makes the later
+		; expressions more efficient. Also, we have lines to spare.
+		; We get 3 extra characters after the machine chunk so that we have the next
+		; offset available as well, which we use to determine when to finish the produce_loop
+		; below and procede to the next machine.
+		machine_chunk = sub("{lua(return machine_data)}", machine_idx, {lua(return machine_chunk_size)} + 3)
+		machine_name = sub(machine_chunk, 3, index(machine_chunk, " ", 0) - 3)
+		i = s2i(sub(machine_chunk, 0, 3), 0)
+		machine_idx += {lua(return machine_chunk_size)}
+
+		; We need to setup the production data anyway, so we branch there. This is
+		; one instruction less efficient than other methods, but it lets us
+		; reuse a lot of code so it's worth it.
+		goto(if(\
+		contains("end", machine_name), \
+		end, \
+		set_data\
+		))
+
+		produce_loop:
+		source_name_raw = sub(\
+		"{lua(return item_names)}", \
+		index(\
+			"{lua(return trans_table)}", \
+			sub(produce_data, {source_char_offset}, 1), \
+			0\
+		) * {lua(return item_names_size)}, \
+		{lua(return item_names_size)}\
+		)
+
+		; Uncomment this line for runtime production debugging.
+		; You will also need to uncomment the line in run_recipes that unhides debug.
+		;gss("debug", gsg("debug") . "<br>" . {source_name} . {get_source_tier} . "_" . min(ceil({get_dest} / {mult}), count({source_name}, {get_source_tier})) . machine_name)
+
+		; Just try to produce. There is a wrinkle here not present when crafting:
+		; we take the minimum with the source count, so that we can use items as
+		; quickly as they become available. We only craft the entire quantity, to
+		; avoid needlessly filling the inventory.
+		produce(\
+		{source_name}, \
+		{get_source_tier}, \
+		min(ceil({get_dest} / {mult}), count({source_name}, {get_source_tier})), \
+		machine_name\
+		)
+
+		; We can blindly subtract the number of items in the machine, because we've
+		; guaranteed via the guards on our loop that we exit as soon as the machine
+		; is active. This means the item in there *must* be the correct one, if the
+		; count is > 0.
+		{set_dest({get_dest} - {mult} * machine.item.count(machine_name))}
+
+		next_item:
+		i += {produce_chunk_size}
+		set_data:
+		produce_data = sub("{lua(return produce_data)}", i, {produce_chunk_size})
+
+		; Go to the next machine if we're done with this set of machines, or the machine
+		; has become active. Otherwise, either produce the next item, or skip it if
+		; the quantity is <= 0.
+		goto(if(\
+		i >= {next_offset}, \
+		machine_loop, \
+		if(\
+			active(machine_name), \
+			machine_loop, \
+			if(\
+				{get_dest} <= 0., \
+				next_item, \
+				produce_loop\
+			)\
+		)\
+		))
+
+		end:
+		gss({action}, if(\
+		contains(impulse(), "key."), \
+		if(\
+			contains(impulse(), "key.{left}"), \
+			"1", \
+			"-1"\
+		), \
+		gsg({action})\
+		))
+	};
+	"produce": {
+	};
+	"produce dust": {
+		:import factory constants
+
+		:name {script_name(produce dust)}
+
+		:local int _tier
+		:local double previous_amount
+
+		_tier = _tier + 1
+		previous_amount = count("ore", _tier)
+		produce("ore", _tier, {get_queue(_tier, ore)}, "crusher")
+		{subtract_queue(_tier, dust, (previous_amount - count("ore", _tier)) * 2.)}
+		{subtract_queue(_tier, ore, previous_amount - count("ore", _tier))}
+
+		gotoif(notierupdust, _tier >= 10 || {get_queue(_tier, lump)} <= 0. || active("mixer"))
+		craft("lump", _tier, min(\
+		min(\
+			(count("dust", _tier) - 1.) / 4., \
+			count("dust", _tier + 1)\
+		), \
+		{get_queue(_tier, lump)} - count("lump", _tier)\
+		))
+		previous_amount = count("lump", _tier)
+		produce("lump", _tier, min(previous_amount, {get_queue(_tier, lump)}), "mixer")
+		{subtract_queue(_tier, dust, previous_amount - count("lump", _tier))}
+		{subtract_queue(_tier, lump, previous_amount - count("lump", _tier))}
+		notierupdust:
+
+		gotoif(noproduceingot, active("oven") | (if(_tier == 10, 0., ({get_queue(_tier, lump)} - count("lump", min(_tier, 9)))) * 4. > 2. * min(0., count("dust", _tier) - ({get_queue(_tier, ingot)})) & count("dust", _tier) < 2. * ({get_queue(_tier, ingot)})))
+		previous_amount = count("dust", _tier)
+		produce("dust", _tier, min(previous_amount - 1., {get_queue(_tier, ingot)}), "oven")
+		{subtract_queue(_tier, ingot, previous_amount - count("dust", _tier))}
+		noproduceingot:
+
+		goto(if(_tier >= 10, 99, 1))
+	};
+
+	"craft": {
+		:import factory constants
+		:import recipes
+
+		:name {script_name(craft)}
+
+		:local double previous_amount
+		:local int i
+		:local string itemdata
+		:local string group_data
+
+		:global int factory_target
+
+		key.{up}()
+		key.{down}()
+
+		isopen("factory")
+
+		; If we were launched via key impulse, invoke the UI immediately to start turbo,
+		; and set action to signal which key was pressed. Otherwise, we're being called
+		; as a produce script.
+		execute(if(contains(impulse(), "key."), "{script_name(ui)}", "###badname###"))
+		gotoif(group_abort, contains(impulse(), "key."))
+
+		; Craft all the items.
+		craftitems_loop:
+		itemdata = {lua(return factory.composite_string("i/10", "craft"))}
+
+		do_craft:
+		; Because items and tiers start at 1, but i is zero-based, we have to add 1
+		; or (pre-multiplying, 10) in these expressions.
+		; However, tier is zero-based inside our indexing representation, so we don't
+		; add it there.
+		previous_amount = count({get_name}, i%10 + 1)
+		craft({get_name}, i%10 + 1, {get_raw(10 + i)})
+		{set_raw(10 + i, {get_raw(10 + i)} - (count({get_name}, i%10 + 1) - previous_amount))}
+		inc:
+		; This skips over tiers that don't exist for the given item, by using the
+		; tier data embedded in "itemdata".
+		i = i + if(i2s(i%10) == {tiers_char}, 10 - i%10, 1)
+		goto(if(i%10 != 0, \
+			if({get_raw(10 + i)} > 0., do_craft, inc), \
+			if(i < {items_count} * 10, craftitems_loop, crafting_done)))
+		crafting_done:
+
+		; Uncomment these lines for runtime item quantity debugging.
+		; You will also need to uncomment the line in run_recipes that unhides debug.
+		;i = 10
+		;debug_loop:
+		;gss("debug", if(i == 10, "", gsg("debug") . if({get_raw(i)} > 0., "<br>" . i . " " . {get_raw(i)}, "")))
+		;i += 1
+		;gotoif(debug_loop, i < {lua(return #factory.items)} * 10 + 10)
+
+		group_data = "{lua(\
+		acc = {}\
+		for i = 1, #factory.items do\
+			local item = factory.items[i];
+			if item.craft_type != "group" then goto continue end\
+			for j = 1, item.tier do\
+				acc[#acc+1] = "|" .. (i * 10 + j + 99);
+				local recipe = item.recipes[j];
+				for k = 1, #recipe, 2 do\
+				acc[#acc+1] = recipe[k] + 100;
+				end\
+			end\
+			::continue::\
+		end\
+		acc[#acc+1] = "|";
+		return table.concat(acc);
+		)}"
+
+		i = index(group_data, "|" . (factory_target + 100), 0) + 1
+		check_group_loop:
+		i += 3
+		goto(if(\
+		i < 4, group_abort, \
+		if(\
+			sub(group_data, i, 1) == "|", group_complete, \
+			if(\
+				gdg({queue_str} . sub(group_data, i, 3)) > 0., group_abort, \
+				check_group_loop\
+			)\
+		)\
+		))
+
+		group_complete:
+		{set_raw(factory_target, 0.)}
+		group_abort:
+		gss({action}, if(\
+		contains(impulse(), "key."), \
+		if(\
+			contains(impulse(), "key.{up}"), \
+			"1", \
+			"-1"\
+		), \
+		gsg({action})\
+		))
+	};
+	"init": {
+		:import factory constants
+
+		:name {script_name(init)}
+
+		wakeup()
+		open.factory()
+
+		isopen("factory")
+
+		:global double factory_target_amount
+		:global int factory_target
+
+		:global int turbo.cycles
+		:global int turbo.cycles.max
+
+		:local double target_value
+
+		; Run the UI, to display the current pending item.
+		execute("{script_name(ui)}")
+
+		; Initial dispatch on entering the factory to determine if we are resuming
+		; a crafting operation or waiting to launch a new one. This is done outside
+		; of turbo, so that we never invoke turbo if we don't need to.
+		gotoif(wait_loop, {get_raw(factory_target)} == 0.)
+
+		; The core factory cycle. We do each loop of factory production within
+		; one call of nested turbo start/stop, which executes within one frame.
+		;
+		; This loop handles both calculating recipes via "run_recipes"
+		; and crafting via "craft". This is done with conditional execution,
+		; in order to save lines for future possible features.
+		begin_cycle:
+		executesync("TE2.2:start")
+
+		; Here we up the number of cycles so that it will be enough to
+		; calculate the recipes or produce items. We intentionally have a
+		; frame break between the recipe calculation and the beginning of crafting
+		; to prevent jarring lag on startup.
+		; This formula ensures that we don't accidentally step on another script
+		; that needs more cycles, and also that we get the full amount of cycles
+		; even if something else started turbo before us.
+		turbo.cycles.max = max(turbo.cycles.max, turbo.cycles + 4000)
+
+		; We have to save this, because the value can change as a result of executing
+		; later scripts.
+		target_value = {get_raw(factory_target)}
+
+		; All conditional execution in the loop is behind this condition. If it
+		; is true, then we're here because of `ui`. Otherwise,
+		; this is a regular crafting iteration.
+
+		; There are extra checks for isopen("factory") here. The main check is at the
+		; bottom of the loop, but that happens before the end of the frame, so there will
+		; be one more frame where we have exited the factory, but the loop still runs.
+		; Normally, this wouldn't be an issue (all of the scripts will perform no actions
+		; and leave the variables in the same state), but "produce" and "craft" have a
+		; startup condition of isopen("factory"), since they do double-duty as UI impulse
+		; scripts as well.
+		; So, we have to protect them, otherwise executesync() will hang when it hits
+		; the false condition, leading to a stuck script.
+		executesync(if(\
+		isopen("factory"), \
+		if(target_value > 0., "{script_name(produce)}", "{script_name(run_recipes)}"), \
+		"###badname###"\
+		))
+		stop(if(target_value > 0., "{script_name(produce)}", "{script_name(run_recipes)}"))
+		executesync(if(\
+		target_value > 0. && isopen("factory"), \
+		"{script_name(craft)}", \
+		"###badname###"\
+		))
+		stop(if(target_value > 0., "{script_name(craft)}", "###badname###"))
+
+		; Clear factory_target to indicate that crafting is done, if it is, in fact, done.
+		factory_target = if({get_raw(factory_target)} > 0., factory_target, 0)
+		; Re-display the UI when crafting is done.
+		execute(if(factory_target == 0, "{script_name(ui)}", "###badname###"))
+
+		; Clear this (unconditionally), to signal that we're not starting a new crafting
+		; pass.
+		factory_target_amount = 0.
+
+		executesync("TE2.2:stop")
+
+		; Here we either return to the next iteration of the production loop,
+		; or stall on this instruction until we need to launch the factory.
+		; Because there is always 1 extra cycle of turbo after "TE2.2:stop," there
+		; is enough time to execute this goto and have only a single frame break
+		; before starting turbo again at the top of the loop.
+		wait_loop:
+		gotoif(\
+		if(max(factory_target_amount, {get_raw(factory_target)}) > 0., \
+			begin_cycle, wait_loop\
+		), \
+		isopen("factory")\
+		)
+
+		; Remove the UI status so it doesn't clutter the variables when we're outside the
+		; factory.
+		; This is safe to repeat, when turbo is looping at the end of the script.
+		gss({status}, "</size>")
+	};
+	"ui": {
+		:import factory constants
+		:import worker_storage_lib
+
+		:name {script_name(ui)}
+
+		:local double count
+		:local int visible_tier
+		:local int tier
+		:local int category
+		:local int item
+		:local int cursor
+
+		:global int turbo.cycles
+		:global int turbo.register
+		:global int factory_target
+		:global double factory_target_amount
+
+		key.{start}()
+
+		isopen("factory")
+
+		; Because of how turbo exec works, we can't launch turbo on the frame the script
+		; starts by calling "TE2.2:start", if we are being called from another script.
+		; We can only do it by changing turbo.register directly, saving a layer of
+		; script execution.
+		; (This is because of the relative positioning of TE.turbo vs our script;
+		; usually we would be before, but when we are first launched our script is after.)
+		turbo.register += 1
+
+		; Use worker_storage_lib to find a worker_slot to use for permanent storage.
+		:local int worker_slot
+		{worker_lib_line_1([factory])}
+		{worker_lib_line_2}
+
+		; Split out the worker data into separate variables. We take advantage of this
+		; time to also perform increment/decrement, since we can easily combine it in
+		; this stage. We don't bother checking if we've got a valid slot, because if we
+		; don't, we'll simply fail to parse and get the fallback value.
+
+		#action_num s2i(gsg({action}), 0)
+		; Is the u/d action valid for this position?
+		; Using contains() instead of == and chained compares saves a lot of import space.
+		#is_ud(pos) contains(impulse() . cursor, ":craft{pos}")
+
+		cursor = min(9, max(0, \
+		s2i(sub(worker.name(worker_slot), {len({worker_prefix})} + 11, 1), 0) +\
+		if(contains(impulse(), ":produce"), {action_num}, 0)\
+		))
+		count = min(9999999., max(1., \
+		s2d(sub(worker.name(worker_slot), {len({worker_prefix})}, 7), 1.) +\
+		if(contains(impulse(), ":craft"), i2d({action_num} * 10^(cursor - 3)), 0.)\
+		))
+
+		#num_categories {lua(return #factory.categories)}
+		category = (\
+		s2i(sub(worker.name(worker_slot), {len({worker_prefix})} + 8, 1), 0) -\
+		if({is_ud(1)}, {action_num}, 0) +\
+		{num_categories}\
+		) % {num_categories}
+
+		; Because math expressions are so expensive, in terms of import space, it's best
+		; to just pre-compute tables of the next/previous item to go to for every item.
+		; To avoid duplicating expressions, we also make a no-op table for the case where
+		; we're not incrementing or decrementing.
+		{lua(\
+		function factory.item_inc_table(inc)\
+			local acc = {}\
+			local default = string.format("%02d", factory.categories[1].default - 1)\
+			for i = 1, #factory.categories do\
+				local cat = factory.categories[i]\
+				local cat_size = cat.last - cat.first + 1\
+				for j = cat.first, cat.last do\
+				acc[j] = string.format("%02d", (j + inc - cat.first) % cat_size + cat.first - 1)\
+				end\
+			end\
+			for i = 1, #factory.items do\
+				acc[i] = acc[i] or default\
+			end\
+			return table.concat(acc)\
+		end\
+		)}
+		#item_inc_table(inc) {lua(return factory.item_inc_table({inc}))}
+		#category_defaults {lua(\
+		local acc = {}\
+		for i = 1, #factory.categories do\
+			acc[i] = string.format("%02d", factory.categories[i].default - 1)\
+		end\
+		return table.concat(acc)\
+		)}
+
+		; Items in this variable are zero-indexed, as opposed to their regular ids, which
+		; start from 1.
+		; We increment the items in the opposite direction from the action, because pressing
+		; up (action 1) *increments* numerical values but *decrements* elements in an
+		; alphabetically sorted list.
+		item = s2i(\
+		if({is_ud(1)}, \
+			sub(\
+				"{category_defaults}", \
+				category * 2, \
+				2\
+			), \
+			sub(\
+				if({is_ud(0)}, \
+				if(\
+					contains(gsg({action}), "-1"), \
+					"{item_inc_table(1)}", \
+					"{item_inc_table(-1)}"\
+				), \
+				"{item_inc_table(0)}"\
+				), \
+				s2i(\
+				sub(worker.name(worker_slot), {len({worker_prefix})} + 9, 2), \
+				{lua(return factory.categories[1].default - 1)}\
+				) * 2, \
+				2\
+			)\
+		), \
+		0\
+		)
+
+		; The distinction between "tier" and "visible_tier" has to do with the fact that
+		; items have different tier maximums. When a user is scrolling through different
+		; items, if the "tier" is T10 (represented as "9" in our zero-indexed scheme),
+		; then the "visible_tier" will change to fit the maximum tier for the item, while
+		; the tier remains at T10. However, if the item is a producer (max of T5), and
+		; the user moves the cursor to the tier field and presses "W", the attempt to
+		; increment "tier" will fix it at a new value of T5 (4).
+		#tier_data {lua(\
+		local acc = {};
+		for i = 1, #factory.items do\
+			local item = factory.items[i];
+			acc[i] = string.format("%d", item.tier - 1);
+		end\
+		return table.concat(acc)\
+		)}
+
+		; Expression to load the saved tier data from the worker name, including
+		; a default value when there is no data.
+		#saved_worker_tier s2i(sub(worker.name(worker_slot), {len({worker_prefix})} + 7, 1), 0)
+
+		; It makes the most sense to set visible_tier first. There is a complication
+		; when adjusting the tier down; in this case, we reduce the maximum bounds by
+		; one, so that (for instance) if the max tier is T5, and the current tier is T10,
+		; we'll properly clip the visible_tier to T4 after subtracting 1 to get T9.
+		; This type of adjustment isn't needed (or wanted) in the other direction, or
+		; when the tier isn't changing.
+		visible_tier = max(0, \
+		min(s2i(sub("{tier_data}", item, 1), 9) +\
+				if({is_ud(2)} && gsg({action}) == "-1", -1, 0), \
+			{saved_worker_tier} + if({is_ud(2)}, {action_num}, 0)\
+		)\
+		)
+		tier = if({is_ud(2)}, visible_tier, {saved_worker_tier})
+
+		; Finally, construct the visible name for use in the variable.
+		{lua(\
+		local names = {}\
+		local name_starts = {}\
+		local name_sizes = {}\
+		local name_len = 0\
+		\
+		for i = 1, #factory.items do\
+			local name = factory.items[i].name\
+			names[i] = name\
+			name_starts[i] = string.format("%03d", name_len)\
+			name_len = name_len + #name\
+			name_sizes[i] = string.format("%02d", #name)\
+		end\
+		factory.name_data = table.concat(names)\
+		factory.name_starts = table.concat(name_starts)\
+		factory.name_sizes = table.concat(name_sizes)\
+		factory.items_count = #factory.items\
+		\
+		names = {}\
+		for i = 1, #factory.categories do\
+			names[i] = factory.categories[i].name\
+		end\
+		factory.category_names = table.concat(names)\
+		)}
+		#name_data {lua(return factory.name_data)}
+		#name_starts {lua(return factory.name_starts)}
+		#name_sizes {lua(return factory.name_sizes)}
+		#category_names {lua(return factory.category_names)}
+
+		; Set this variable in order to begin a variable-hiding block.
+		; It looks like a no-op, but really we're ensuring that it has a slot in the
+		; globals table, even if its value empty - in this case, what we care about
+		; is the *name*, which starts with "<size=0>".
+		; Do this *after* all the other work, to give turbo register time to
+		; set its variables, in case we're doing this right at startup.
+		gss({action}, gsg({action}))
+
+		; Do conditional stuff, depending on if we're launching the factory.
+		; We set all these variables always, so that they'll have a consistent order,
+		; and also to save lines instead of jumping over this block.
+
+		#valid_start contains(factory_target . impulse(), "0key.")
+		; This (maybe) launches the factory. We need to do it soon enough to not
+		; interrupt turbo, see the comment on "TE2.2:stop", below.
+		{lua(\
+		for i = 1, #factory.categories do\
+			if factory.categories[i].name == "grup" then\
+				grup_cat = i - 1;
+				return;
+			end\
+		end\
+		return "Couldn't find grup"\
+		)}
+		factory_target_amount = if(\
+		{valid_start}, \
+		count, \
+		factory_target_amount\
+		)
+
+		; Only set factory_target if it's zero, which indicates that the factory is idle.
+		; This prevents repeated keypresses from messing things up.
+		factory_target = if({valid_start}, (item + 1) * 10 + visible_tier, factory_target)
+
+		; Construct the status line. There's a *lot* that goes into this.
+		;
+		; For starters, we fake the variable - it's not really "make", but rather a
+		; totally different variable that's less likely to collide. The true variable name
+		; is never seen, because it's still part of the <size=0> block. We put our fake
+		; variable name after. We do all this so that we can "unset" the variable by
+		; just changing its value - this way, it's not truly unset, and we don't have
+		; issues with variable ordering as a result.
+		;
+		; This also means we can change the variable name to something else, like
+		; "error", if we need to, all without actually creating a new variable or
+		; changing ordering.
+		;
+		; All the clauses are dynamically created on the fly here. We also create the
+		; "cursor" by highlighting a specific part of the result in green. This involves
+		; a great deal more complexity.
+		#curs_col 2f4
+		; For later - scanning rework
+		;count_string if(category == {lua(return grup_cat)}, "  -SCAN-", d2s(10000000. + count))
+		#count_string d2s(10000000. + count)
+
+		gss({status}, if(\
+		worker_slot == 200, \
+		"</size>error=<color=#fb3>No available workers!</color>", \
+		if(\
+			turbo.cycles == 0, \
+			"</size>error=<color=#fb3>Turbo exec is not working</color>", \
+			"</size>make=<color=#fff>" .\
+			sub({count_string}, 1, 9 - cursor) .\
+			"</color><color=#{curs_col}>".\
+			sub({count_string}, 10 - cursor, 1) .\
+			"</color><color=#fff>".\
+			sub({count_string}, 11 - cursor, 10) .\
+			"<smallcaps>x</smallcaps><color=#" .\
+			if(cursor == 2, "{curs_col}>T", "fff>T") .\
+			(visible_tier + 1) .\
+			if(cursor == 1, "</color> <color=#{curs_col}>", "</color> <color=#fff>") .\
+			sub("{category_names}", category * 4, 4) .\
+			if(cursor == 0, "</color> ...<br><color=#{curs_col}>", "</color> ...<br><color=#fff>") .\
+			sub("{name_data}", s2i(sub("{name_starts}", item * 3, 3), 0), \
+				s2i(sub("{name_sizes}", item * 2, 2), 0)) .\
+			"<br></color></color>" . if(\
+				contains(impulse() . gsg({action}), ":init<"), \
+				gsg({action}), \
+				if(\
+				factory_target == 0, \
+				"<color=#0df>{up}{left}{down}{right} moves, {start} crafts</color> ", \
+				"<color=#ff0>Crafting...</color>"\
+				)\
+			)\
+		)\
+		))
+
+		; Pause/unpause a dissolve worker, if it occupies our data slot.
+		; If it's a different type of worker, leave it alone by dummying out the name.
+		worker.pauseName(\
+		if(\
+			contains(worker.task(worker.name(worker_slot)), "factory.dissolveManagement"), \
+			worker.name(worker_slot), \
+			"![@#nosuchtask#@]!"\
+		), \
+		contains(gsg({status}), "Crafting")\
+		)
+
+		; "init" will take over as soon as factory_target_amount gets set 4 lines
+		; above; it will call its own "TE2.2:start" and thus prevent the frame from
+		; ending before this line takes effect.
+		; We need two cycles in-between to have a seamless transition.
+		; We change the variable directly, instead of calling "TE2.2:stop", for parity
+		; with the way we start: This avoids some edge cases when turbo is incorrectly
+		; installed. It also is fine in this case, because we don't need to wait for
+		; the end of the frame.
+		turbo.register -= 1
+
+		; Setting the data back in the worker is moved way down to the bottom, to function
+		; as the "filler" action that can be repeated while the script is waiting for
+		; the frame to end. We can't use of the actions that set global variables for this,
+		; because they may need to be modified later in the frame, and thus setting them
+		; here in a loop would overwrite the value.
+		worker.setName(if(worker_slot < 100, worker_slot, worker_slot - 100), \
+		"{worker_prefix}" . sub(d2s(10000000. + count), 1, 7) . tier . category .\
+		sub(i2s(100 + item), 1, 2) . cursor\
+		)
+	};
 }
