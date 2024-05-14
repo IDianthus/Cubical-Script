@@ -39,7 +39,7 @@ namespace cubicalscript {
 
 		static TokenIdentifier tokenIdentifiers[static_cast<int>(TokenType::CUBICALFREEZE)];
 	};
-	
+
 	struct Token {
 		TokenType type; 
 		std::string string; 
