@@ -1,44 +1,66 @@
 #include <fstream>
-#include <iostream>
 
-using namespace std;
-
-ifstream in("Test.in");
-ofstream out("Test.out");
-
+std::ifstream in;
+std::ofstream out;
 
 void newline_indent(int tab_ammount) {
 	out << '\n';
 	for (int i = tab_ammount; i > 0; i--) {
-		out << '\t';
+		out << '   ';
 	}
 }
 
-bool comment;
-bool string_input;
-
-int space;
-int indenting = 1;
-
-char input [3];
-
 int main() {
 
-	out << "{";
-	newline_indent(indenting);
+	bool comment = false;
+	bool string_input = false;
+	bool name_input = false;
 
+	int space = 0;
+	int indenting = 0;
 
-	while (in.get(input [2])) {
+	char input [3] = {};
+
+	in.open ("Test.in", std::ifstream::in);
+	out.open ("Test.out", std::ofstream::out);
+
+	while (in.get (input [2])) {
 		bool hidden_character = false;
 
+		switch (input [2])
+		{
+			// case comment
+			case (';'):
+			if ((string_input && name_input) == false) {
+				comment == true;
+			}
+			break;
+
+			// case
+			case ('\"'):
+			if (name_input || comment) {
+				name_input = false;
+				break;
+			}
+			if (input [1] == '{') {
+				name_input = true;
+				break;
+			}
+			string_input = !string_input;
+			break;
+
+		default:
+			break;
+		}
+
 		// comment case
-		if (input [1] != '}' && input [2] == ';' && string_input == false) {
+		if (input [2] == ';' && string_input == false) {
 			comment = true;
 		}
 
 		if (input [2] == '{' || input [2] == '(') {
 			if (comment == false) {
-				indenting++;
+				indenting ++;
 				if (input [2] == '(' && input [1] != '{') {
 					space++;
 				}
@@ -53,16 +75,16 @@ int main() {
 		// consistent indenting
 		if (input [2] == ' ') {
 			if (comment == false && string_input == false) {
-				space++;
+				space ++;
 				hidden_character = true;
 			}
 		}
 
 		// make sure all doubles end in .0
 		if (
-				int(input [0]) > 47 && int(input [0]) < 58
+				int (input [0]) > 47 && int (input [0]) < 58
 				&& input [1] == '.'
-				&& (int(input [2]) < 48 || int(input [2]) > 57)
+				&& (int (input [2]) < 48 || int (input [2]) > 57)
 			) {
 			out << 0;
 		}
@@ -80,7 +102,7 @@ int main() {
 		if (input [1] == '\\') {
 
 			if (input [2] == 't') {
-				out << '\t';
+				out << '   ';
 				hidden_character = true;
 			}
 
@@ -134,7 +156,7 @@ int main() {
 
 
 		if (space == 3) {
-			out << '\t';
+			out << '   ';
 			space = 0;
 		}
 
@@ -157,7 +179,7 @@ int main() {
 		// adding indents
 		if (input [2] != ' ') {
 			if (space != 0 && input [0] != '\\' && input [1] != 'n') {
-				out << " ";
+				out << ' ';
 			}
 			space = 0;
 		}
@@ -166,7 +188,7 @@ int main() {
 		if (hidden_character == false) {
 			out << input [2];
 			if (input [2] == '\\') {
-				newline_indent(indenting);
+				newline_indent (indenting);
 				input [2] = ' ';
 			}
 		}
@@ -174,7 +196,7 @@ int main() {
 		// permits spacing between blocks
 		if ((input [1] == ':' && input [2] == '{') || (input [1] == '}' && input [2] == ';')) {
 			out << '\n';
-			newline_indent(indenting);
+			newline_indent (indenting);
 		}
 
 		// don't keep spaces in memory as the logic can fail
