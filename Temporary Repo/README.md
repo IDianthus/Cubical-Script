@@ -141,7 +141,7 @@ The configuration shown bellow is the default sellection.
 After the analysis is complete, you will be moved to the programs `entry` sequence, the starting point of the executable.<br>
 The code decompiler window at the right of our assembly code is a C representation of the actions performed by the entry function.
 
-![Showcase Import Results After Analysis](images/Showcase%20Import%20Results%20After%20Analysis.png)
+![Showcase Import Results After Analysis](Images/Showcase%20Import%20Results%20After%20Analysis.png)
 
 Additionally, you will see that the scrollbar has gotten populated with more colors, tho the red sections are still visible, this is because, sequances of code can remain unrecognised, even after analysis.<br>
 To not make this example too long, I will be covering the graphing tool inside of the code browser.
@@ -149,17 +149,17 @@ To not make this example too long, I will be covering the graphing tool inside o
 By clicking the graphing tool, you get a screen popup that shows the actions performed inside of the selected field of code.<br>
 Since I have sellected the entry, this single box represents the actions performed when starting the executable.
 
-![Show Function Graph at Entry](images/Show%20Function%20Graph%20at%20Entry.png)
+![Show Function Graph at Entry](Images/Show%20Function%20Graph%20at%20Entry.png)
 
 As you can see, this entry calls for a function.<br>
 Clicking on this, we're taken to the contents of this secondary function
 
-![Show Function Graph at Function Call](images/Show%20Function%20Graph%20at%20Function%20Call.png)
+![Show Function Graph at Function Call](Images/Show%20Function%20Graph%20at%20Function%20Call.png)
 
 The lines going out represent subfunctions, such as if, and the pointer returns to the main function once finished.<br>
 By hovering over a field, you will see the direction in which these subfunctions are performed and by hovering over a line you will see the section being hovered on
 
-![Showe Function Graph Action By Hovering Over](images/Show%20Function%20Graph%20Action%20By%20Hovering%20Over.png)
+![Showe Function Graph Action By Hovering Over](Images/Show%20Function%20Graph%20Action%20By%20Hovering%20Over.png)
 
 ### Conclusion
 
