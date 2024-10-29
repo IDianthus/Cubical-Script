@@ -11,12 +11,12 @@ This is the first phase of the project, in which each member of the team has had
 * e) Concluzii
 
 Each entry ends with a conclusion, and as such, the tasks were distributed in the following order:
-1. Dariand Pandelea on `a)` [State-of-the-art](docx/State-of-the-art.docx)
+1. Pandelea Dariand on `a)` [State-of-the-art](docx/State-of-the-art.docx)
 2. Roșescu Tudor on `b)` [Development perspectives](docx/Development%20perspectives.docx)
 3. Neamţu Alexandru on `c)` [Functionalities curently present](docx/Functionalities%20curently%20present.docx)
-4. Dumitrescu Codrin on `d)` [Example on how to use ghidra]()
+4. Dumitrescu Codrin on `d)` [Example on how to use ghidra](docx/Exemplu%20si%20eventual%20un%20studiu%20de%20caz.docx)
 
-All entries are converted into the .pdf [Ghidra](), containing the entries present inside of this README.md
+All entries are converted into the .docx [Ghidra](docx/Ghidra%20Project.docx), containing the entries present inside of this README.md
 
 ## Chapter-0 Introduction
 
@@ -25,7 +25,7 @@ All entries are converted into the .pdf [Ghidra](), containing the entries prese
 
 The reverse engineering field of disassemblers is, by its nature, an ever changing and evolving one. There is an ever-present need for state of the art programs that can guarantee efficient translation of machine code into assembly.
 
-Having access to a large variety of processors and file formats is essential. At the moment, IDA Pro offers the most vast range, including support for certain exotic architectures like RISC-V and SPARC. Taking that into consideration, Ghidra comes close behind with support for most file formats, including modern ones, and for most processors including their variants, while allowing for the addition of new architectures or extending preexisting ones.<br>
+Having access to a large variety of processors and file formats is essential. At the moment, IDA Pro offers the most vast range, including support for certain exotic architectures like RISC-V and SPARC. Taking that into consideration, Ghidra comes close behind with support for most file formats, including modern ones, and for most processors including their variants, while allowing for the addition of new architectures or extending pre existing ones.<br>
 Processors such as:
 * Z80
 * X86 16/32/64
@@ -44,19 +44,19 @@ Processors such as:
 * Sparc 32/64
 * CR16C
 
-In terms of decompilers, IDA Pro’s "Hex-Rays" is best thanks to its accuracy being comparable to that of a human. The technological advancements implemented through IDA 9.0 also introduced new decompilers for 32- and 64-bit RISC-V code decompilers designed to modernize processes and increase capacities. Ghidra’s decompiler is powerful, but not as refined as Hex-Rays.<br>
+In terms of decompilers, IDA Pro’s "Hex-Rays" is best thanks to its accuracy being comparable to that of a human. The technological advancements implemented through IDA 9.0 also introduced new decompilers for 32- and 64-bit RISC-V code, designed to modernise processes and increase capacities. Ghidra’s decompiler is powerful, but not as refined as Hex-Rays.<br>
 Furthermore, IDA Pro provides superior debugging and emulation for running and tracing target systems, particularly for Android and Windows.<br>
 Currently IDA Pro delivers greater support for patching binaries, interactively changing characteristics of displayed data, renaming variables, functions, structures or changing data presentation and creating custom types.
 
-Regarding graph generation, Ghidra offers a more informative, highly customizable and detailed visualization of code, even marking “if … else” statements on the graph and making it more organised.<br>
+Regarding graph generation, Ghidra offers a more informative, highly customizable and detailed visualisation of code, even marking “if … else” statements on the graph and making it more organised.<br>
 For working teams, facilitating collaborative reverse engineering is important. Ghidra’s design supports working on the same project, while IDA Pro requires certain plugins and the database files are not designed to be shared.
 
 The support for cross-platform, while versatile, is implemented by few tools, like Ghidra, Rafare2 and JaDx, so that they work on macOS, Windows and Linux.
 
 Concerning binaries, Ghidra is faster and loads multiple binaries into projects simultaneously, resulting in an easier approach to following code between applications and libraries, by using multi-threading and multi-core properties of the CPU. For bigger files, 150 MB+, IDA Pro has a better optimization of the memory and CPU usage, it can lessen the processing time, being altogether faster than the other.
 
-The most significant cutting-age technology implemented recently is helping with pattern recognition accuracy and processing very large files due to integration of AI and machine learning in disassemblers. Models are being trained to increase code recognition patterns and data structures.<br>
-A disassembler based on deep learning, DeepDi, proved to be simultaneously fast, highly accurate and efficient against obfuscated binaries, managing to discern valid instructions from the raw binary. For capturing and propagating instruction relations, it uses a neural network graphing model. It has a very low false positive rate and false negative rate when identifying instructions, 0.02%/00.2%, and compared to IDA Pro, the CPU version is twice as fast and the GPU version is 350 times faster. Taking in consideration code section size-disassembly time correlations, the CPU version has a throughput of 146 KB/s and the GPU one is 170 times faster at around 24.5 MB/s.
+The most significant cutting-age technology implemented recently is helping with pattern recognition accuracy and processing very large files due to integration of AI and machine learning in disassemblers. Models are being trained to increase code recognition patterns and data structures.
+A disassembler based on deep learning, DeepDi, proved to be simultaneously fast, highly accurate and efficient against obfuscated binaries, managing to discern valid instructions from the raw binary. For capturing and propagating instruction relations, it uses a neural network graphing model. It has a very low false positive rate and false negative rate when identifying instructions, 0.02%/0.02%, and compared to IDA Pro, the CPU version is twice as fast and the GPU version is 350 times faster. Taking in consideration code section size-disassembly time correlations, the CPU version has a throughput of 146 KB/s and the GPU one is 170 times faster at around 24.5 MB/s.
 
 ### Conclusion
 
@@ -96,10 +96,10 @@ The current suite of tools provided by Ghidra can perform a large variety of tas
 
 ## Chapter-4 Task-D
 
-Ghidra, as an application comes with its own documentation and help files. These help files include examples for using Ghidra and a detailed explanation on all steps to take.<br>
+Ghidra, as an application, comes with its own documentation and help files. These help files include examples for using Ghidra and a detailed explanation on all steps to take.<br>
 This is an example from within the documentation, where the disassembly of an executable file "WinhelloCPP" is shown.
 
-To begin, we will open up ghidra, and create a new project titled `Ghidra Example`
+To begin, we will open up ghidra, and create a new project titled `Ghidra Example`.
 
 ![Create New Project](Images/Create%20New%20Project.png)
 
@@ -113,41 +113,39 @@ This is done by moving to File,
 ![Import File To Decompile](Images/Import%20File%20To%20Decompile.png)
 
 And selecting the file to import.<br>
-To initiate a dissasembly, you must first specify the language of the file,
+To initiate a disassembly, you must first specify the language of the file,
 
-![Sellect File Language](Images/Sellect%20File%20Language.png)
+![Select File Language](Images/Sellect%20File%20Language.png)
 
 Ghidra usually detects it for you, but in the rare case it gets it wrong, the dropdown menu has all usable languages.<br>
-Click `Ok` to start disassembling the file.
-Once the process is finished, you will be prompted to preform an auto analysis,
+Click `Ok` to start disassembling the file. Once the process is finished, you will be prompted to preform an auto analysis,
 
 ![No Code Analysis Yet](Images/No%20Code%20Analysis%20Yet.png)
 
-For the purposes of this example, we will not perform an auto analysis just yet.
-After closing the prompt, you will be shown the import results.
+For the purposes of this example, we will not perform an auto analysis just yet. After closing the prompt, you will be shown the import results.
 
 ![Showcase Import Results](Images/Showcase%20Import%20Results.png)
 
-Closing these results, you will be able to see in the middle of the CodeBrowser the assembly code of the imported executable,<br>
-The bar to its right, is the navigation slider, colored red are unrecognised fields, being fields that ghidra could not recognise the contents of durring disassembly.
+Closing these results, you will be able to see in the middle of the CodeBrowser the assembly code of the imported executable,
+The bar to its right, is the navigation slider, coloured red are unrecognised fields, being fields that ghidra could not recognise the contents of during disassembly.
 
 ![Showcase Import Results Without Analysis](Images/Showcase%20Import%20Results%20Without%20Analysis.png)
 
-We will now request an auto analysis to display the changes it makes. This is done by clicking `auto analysis` inside of the `Analysis` tab, this request will bring up an analysis window, in which you can chose what you want to be done during analysis.<br>
-The configuration shown bellow is the default sellection.
+We will now request an auto analysis to display the changes it makes. This is done by clicking auto analysis inside of the Analysis tab, this request will bring up an analysis window, in which you can choose what you want to be done during analysis.<br>
+The configuration shown below is the default selection.
 
 ![Request Analysis](Images/Request%20Analysis.png)
 
-After the analysis is complete, you will be moved to the programs `entry` sequence, the starting point of the executable.<br>
+After the analysis is complete, you will be moved to the programs entry sequence, the starting point of the executable.<br>
 The code decompiler window at the right of our assembly code is a C representation of the actions performed by the entry function.
 
 ![Showcase Import Results After Analysis](Images/Showcase%20Import%20Results%20After%20Analysis.png)
 
-Additionally, you will see that the scrollbar has gotten populated with more colors, tho the red sections are still visible, this is because, sequances of code can remain unrecognised, even after analysis.<br>
+Additionally, you will see that the scrollbar has gotten populated with more colours, though the red sections are still visible, this is because sequences of code can remain unrecognised, even after analysis.<br>
 To not make this example too long, I will be covering the graphing tool inside of the code browser.
 
 By clicking the graphing tool, you get a screen popup that shows the actions performed inside of the selected field of code.<br>
-Since I have sellected the entry, this single box represents the actions performed when starting the executable.
+Since I have selected the entry, this single box represents the actions performed when starting the executable.
 
 ![Show Function Graph at Entry](Images/Show%20Function%20Graph%20at%20Entry.png)
 
@@ -157,13 +155,13 @@ Clicking on this, we're taken to the contents of this secondary function
 ![Show Function Graph at Function Call](Images/Show%20Function%20Graph%20at%20Function%20Call.png)
 
 The lines going out represent subfunctions, such as if, and the pointer returns to the main function once finished.<br>
-By hovering over a field, you will see the direction in which these subfunctions are performed and by hovering over a line you will see the section being hovered on
+By hovering over a field, you will see the direction in which these sub functions are performed and by hovering over a line you will see the section being hovered on
 
-![Showe Function Graph Action By Hovering Over](Images/Show%20Function%20Graph%20Action%20By%20Hovering%20Over.png)
+![Show Function Graph Action By Hovering Over](Images/Show%20Function%20Graph%20Action%20By%20Hovering%20Over.png)
 
 ### Conclusion
 
-This example is to show an over-view of ghidra's code browser, tho this explanation was short, it showcases how powerful this tool is and how versetile it can prove to be
+This example is to show an overview of ghidra's code browser, tho this explanation was short, it showcases how powerful this tool is and how versatile it can prove to be
 
 ## Chapter-5 Bibliography
 
