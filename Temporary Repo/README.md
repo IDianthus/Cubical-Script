@@ -76,23 +76,23 @@ Ghidra is set for growth, with short-term improvements driven by community feedb
 
 ## Chapter-3 Task-C
 
-Ghidra is a debugging program and reverse engineering tool, used for malware analysis and program dissection without danger to the user’s device
+Ghidra is a debugging program and reverse engineering tool, used for malware analysis and program dissection without danger to the user’s device.
 
 Firstly, it’s most commonly used for reverse engineering malware, general software and firmware.
 
-Its wide array of tools and interfaces allow intermediate programmers to understand what they’re dealing with very easily, thanks to how it maps out functions
+Its wide array of tools and interfaces allow intermediate programmers to understand what they’re dealing with very easily, thanks to how it maps out functions.
 
 The graph function allows you to lay out the program into a graph, where you can see what the program is doing as interconnected boxes, like a family tree showing which functions are called by their parent function.
 
 The emulator allows you to run the program in customizable environments, you can use the emulator to create a virtual machine on which to run your application, so as to not endanger your own computer.
 
-The debugger lets you manually progress through the program. While it isn’t specific to Ghidra, it allows you to look at what the program does to better understand its inner workings, Ghidra has a large set of powerful debuggers to accommodate different workflows
+The debugger lets you manually progress through the program. While it isn’t specific to Ghidra, it allows you to look at what the program does to better understand its inner workings, Ghidra has a large set of powerful debuggers to accommodate different workflows.
 
-Ghidra supports the creation of different tools written in python
+Ghidra supports the creation of different tools written in python.
 
 ### Conclusion
 
-The current suite of tools provided by Ghidra can perform a large variety of tasks with ease
+The current suite of tools provided by Ghidra can perform a large variety of tasks with ease.
 
 ## Chapter-4 Task-D
 
@@ -126,8 +126,7 @@ For the purposes of this example, we will not perform an auto analysis just yet.
 
 ![Showcase Import Results](Images/Showcase%20Import%20Results.png)
 
-Closing these results, you will be able to see in the middle of the CodeBrowser the assembly code of the imported executable,
-The bar to its right, is the navigation slider, coloured red are unrecognised fields, being fields that ghidra could not recognise the contents of during disassembly.
+Closing these results, you will be able to see in the middle of the CodeBrowser the assembly code of the imported executable, the bar to its right, is the navigation slider, coloured red are unrecognized fields, being fields that ghidra could not recognise the contents of, during disassembly.
 
 ![Showcase Import Results Without Analysis](Images/Showcase%20Import%20Results%20Without%20Analysis.png)
 
